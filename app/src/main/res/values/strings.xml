@@ -10,4 +10,9 @@
     <string name="analysis_unavailable_message">Analysis summaries are unavailable until persisted results and aggregates are verified.</string>
     <string name="settings_unavailable_title">Settings</string>
     <string name="settings_unavailable_message">Settings controls are not available yet. YouTube key management remains accessible from Home.</string>
+    <string name="ui_status_loading">Loading</string>
+    <string name="ui_status_empty">No content is available.</string>
+    <string name="ui_status_recoverable_error">Something went wrong. You can try again.</string>
+    <string name="ui_status_permanent_error">This action cannot be completed.</string>
+    <string name="ui_status_retry">Retry</string>
 </resources>
