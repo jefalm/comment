@@ -116,7 +116,7 @@ object TxtExportParser {
 
         val comments = mutableListOf<UiComment>()
         var declaredReplies = 0
-        var index = showingIndex + 1
+        var index = skipPageSizeOptions(lines, showingIndex + 1)
         while (index < lines.size) {
             val current = lines[index]
             if (isFooter(current)) break
@@ -150,8 +150,7 @@ object TxtExportParser {
             index = ordinalIndex + 1
             while (index < lines.size) {
                 val bodyLine = lines[index]
-                if (isFooter(bodyLine) || commentHeader.matches(bodyLine)) break
-                if (bodyLine.startsWith("@")) fail("malformed_comment_header", "COMMENTS", index + 1)
+                if (isFooter(bodyLine) || isCommentBoundary(lines, index)) break
 
                 val trimmed = bodyLine.trim()
                 val reply = replyMarker.matchEntire(trimmed)
@@ -169,7 +168,7 @@ object TxtExportParser {
                 }
                 val nextLine = lines.getOrNull(index + 1)
                 val isTrailingLikes = numeric != null && textLines.isNotEmpty() &&
-                    (nextLine == null || isFooter(nextLine) || commentHeader.matches(nextLine) || replyMarker.matches(nextLine.trim()))
+                    (nextLine == null || isFooter(nextLine) || isCommentBoundary(lines, index + 1) || replyMarker.matches(nextLine.trim()))
                 if (isTrailingLikes) {
                     if (numeric < 0) fail("invalid_comment_likes", "COMMENTS", index + 1)
                     likes = numeric
@@ -244,6 +243,34 @@ object TxtExportParser {
 
     private fun valueAt(lines: List<String>, index: Int, section: String): String =
         lines.getOrNull(index)?.trim() ?: fail("incomplete_video_metadata", section, index + 1)
+
+    private fun skipPageSizeOptions(lines: List<String>, startIndex: Int): Int {
+        var index = startIndex
+        while (lines.getOrNull(index)?.isBlank() == true) index++
+        if (lines.getOrNull(index)?.trim() != "Page size:") return startIndex
+
+        index++
+        var optionCount = 0
+        while (index < lines.size) {
+            val option = lines[index].trim()
+            if (option.isEmpty()) {
+                index++
+                continue
+            }
+            if (commentHeader.matches(lines[index])) break
+            val pageSize = option.toIntOrNull()
+                ?: fail("malformed_page_size_control", "COMMENTS", index + 1)
+            if (pageSize <= 0) fail("malformed_page_size_control", "COMMENTS", index + 1)
+            optionCount++
+            index++
+        }
+        if (optionCount == 0) fail("malformed_page_size_control", "COMMENTS", index + 1)
+        return index
+    }
+
+    private fun isCommentBoundary(lines: List<String>, index: Int): Boolean =
+        commentHeader.matches(lines.getOrNull(index).orEmpty()) &&
+            ordinal.matches(lines.getOrNull(index + 1)?.trim().orEmpty())
 
     private fun isFooter(line: String): Boolean {
         val trimmed = line.trim()

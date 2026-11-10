@@ -9,6 +9,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -58,22 +59,40 @@ class YouTubeCommentImporterTest {
         )
 
         val result = importer.import(request)
+        val requests = List(5) { server.takeRequest().requestUrl!! }
 
         assertTrue(result.completed)
         assertEquals(3L, result.itemsInserted)
-        assertEquals(1, sink.threadPages.size)
-        assertEquals("Olá 😀", sink.threadPages.single().first().text)
+        assertEquals(2, sink.threadPages.size)
+        assertEquals(listOf("top-1", "reply-1"), sink.threadPages.first().map { it.sourceCommentId })
+        assertTrue(sink.threadPages.last().isEmpty())
+        assertEquals("Olá 😀", sink.threadPages.first().first().text)
         assertEquals(listOf("reply-2", null), sink.replyPages.map { it.singleOrNull()?.sourceCommentId })
-        assertEquals("youtube/v3/videos", server.takeRequest().path?.substringBefore('?')?.removePrefix("/"))
-        val threadRequest = server.takeRequest()
-        assertTrue(threadRequest.path.orEmpty().contains("maxResults=100"))
-        assertTrue(threadRequest.path.orEmpty().contains("textFormat=plainText"))
-        assertFalse(threadRequest.path.orEmpty().contains("search"))
-        val firstReplyRequest = server.takeRequest()
-        assertTrue(firstReplyRequest.path.orEmpty().contains("parentId=top-1"))
-        assertFalse(firstReplyRequest.path.orEmpty().contains("pageToken"))
-        assertTrue(server.takeRequest().path.orEmpty().contains("pageToken=reply-next"))
-        assertTrue(server.takeRequest().path.orEmpty().contains("pageToken=thread-next"))
+
+        assertEquals("/youtube/v3/videos", requests[0].encodedPath)
+        assertEquals("snippet,statistics", requests[0].queryParameter("part"))
+        assertEquals("abcdefghijk", requests[0].queryParameter("id"))
+
+        assertEquals("/youtube/v3/commentThreads", requests[1].encodedPath)
+        assertEquals("snippet,replies", requests[1].queryParameter("part"))
+        assertEquals("abcdefghijk", requests[1].queryParameter("videoId"))
+        assertEquals("100", requests[1].queryParameter("maxResults"))
+        assertEquals("plainText", requests[1].queryParameter("textFormat"))
+        assertNull(requests[1].queryParameter("pageToken"))
+
+        assertEquals("/youtube/v3/comments", requests[2].encodedPath)
+        assertEquals("snippet", requests[2].queryParameter("part"))
+        assertEquals("top-1", requests[2].queryParameter("parentId"))
+        assertEquals("100", requests[2].queryParameter("maxResults"))
+        assertEquals("plainText", requests[2].queryParameter("textFormat"))
+        assertNull(requests[2].queryParameter("pageToken"))
+
+        assertEquals("/youtube/v3/comments", requests[3].encodedPath)
+        assertEquals("top-1", requests[3].queryParameter("parentId"))
+        assertEquals("reply-next", requests[3].queryParameter("pageToken"))
+
+        assertEquals("/youtube/v3/commentThreads", requests[4].encodedPath)
+        assertEquals("thread-next", requests[4].queryParameter("pageToken"))
     }
 
     private class RecordingSink : YouTubeImportPageSink {

@@ -13,7 +13,10 @@ import org.junit.Test
 class TxtExportParserTest {
     @Test
     fun parsesCanonicalExportAndReconcilesMetadata() {
-        val data = TxtExportParser.parseLines(canonicalFixture())
+        val lines = canonicalFixture().toMutableList()
+        lines.add(lines.indexOf("Sempre é assim 😂😂😂😂😂 NÃO entendo o espanto é brasil meu caro queria coisa melhor dai tem que ir para outro país") + 1,
+            "@quoted | 11/9/2026, 2:25:52 PM")
+        val data = TxtExportParser.parseLines(lines)
 
         assertEquals(6_750L, data.videoDetails.views)
         assertEquals("250", data.videoDetails.unlabeledStatisticRaw)
@@ -23,10 +26,11 @@ class TxtExportParserTest {
         assertEquals(58, data.statistics.totalLikes)
         assertEquals((1..24).map(Int::toString), data.comments.map { it.id })
         assertEquals(6, data.comments[2].text.lines().size)
+        assertTrue(data.comments[1].text.contains("@quoted | 11/9/2026, 2:25:52 PM"))
         assertEquals(0, data.comments[10].likes)
         assertEquals("11/9/2026, 1:57:32 PM", data.comments.first().date)
         assertNull(data.comments.first().publishedEpochMillis)
-        assertTrue(data.comments.first().text.contains("😂"))
+        assertTrue(data.comments[1].text.contains("😂"))
         assertTrue(data.comments[13].text.contains("IDOTA"))
         assertEquals(7, data.comments.count { it.repliesHint != null })
     }
