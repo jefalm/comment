@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.lifecycleScope
 import com.example.commentanalyzer.network.youtube.YouTubeApiService
+import com.example.commentanalyzer.ui.navigation.CommentAnalyzerNavigation
 import com.example.commentanalyzer.ui.viewer.CommentViewerScreen
 import com.example.commentanalyzer.ui.viewer.CommentViewerViewModel
 import kotlinx.coroutines.Dispatchers
@@ -32,9 +33,13 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val viewModel: CommentViewerViewModel = viewModel()
-                    CommentViewerScreen(
-                        viewModel = viewModel,
-                        onManageApiKey = { showYouTubeApiKeyDialog(viewModel) }
+                    CommentAnalyzerNavigation(
+                        homeContent = {
+                            CommentViewerScreen(
+                                viewModel = viewModel,
+                                onManageApiKey = { showYouTubeApiKeyDialog(viewModel) }
+                            )
+                        }
                     )
                 }
             }

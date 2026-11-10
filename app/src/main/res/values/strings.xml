@@ -1,3 +1,13 @@
 <resources>
     <string name="app_name">comment</string>
+    <string name="navigation_home">Home</string>
+    <string name="navigation_comments">Comments</string>
+    <string name="navigation_analysis">Analysis</string>
+    <string name="navigation_settings">Settings</string>
+    <string name="comments_unavailable_title">Comments</string>
+    <string name="comments_unavailable_message">Comment browsing is unavailable until Room-backed paging is verified.</string>
+    <string name="analysis_unavailable_title">Analysis</string>
+    <string name="analysis_unavailable_message">Analysis summaries are unavailable until persisted results and aggregates are verified.</string>
+    <string name="settings_unavailable_title">Settings</string>
+    <string name="settings_unavailable_message">Settings controls are not available yet. YouTube key management remains accessible from Home.</string>
 </resources>
