@@ -5,7 +5,10 @@ data class ImportRequest(
     val sourceType: SourceType,
     val sourceLocator: String,
     val sourceScopeKey: String,
-    val includeReplies: Boolean
+    val includeReplies: Boolean,
+    val nextThreadPageToken: String? = null,
+    val activeParentCommentId: String? = null,
+    val nextReplyPageToken: String? = null
 )
 
 data class ImportProgress(
@@ -15,5 +18,7 @@ data class ImportProgress(
     val itemsDeduplicated: Long,
     val itemsFailed: Long,
     val completed: Boolean,
-    val lastErrorCode: String?
+    val lastErrorCode: String?,
+    val retryable: Boolean? = null,
+    val retryAfterEpochMillis: Long? = null
 )

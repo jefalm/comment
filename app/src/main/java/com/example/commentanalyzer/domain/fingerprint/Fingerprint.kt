@@ -23,3 +23,25 @@ object FingerprintV1 {
         return hashBytes.joinToString("") { "%02x".format(it) }
     }
 }
+
+object FingerprintV2 {
+    const val VERSION = 2
+
+    fun compute(
+        sourceScopeKey: String,
+        videoId: String?,
+        normalizedText: String,
+        publishedAtRaw: String?,
+        authorDisplayName: String?
+    ): String {
+        val payload = listOf(
+            sourceScopeKey,
+            videoId.orEmpty(),
+            normalizedText,
+            publishedAtRaw.orEmpty(),
+            authorDisplayName.orEmpty()
+        ).joinToString("\u001F")
+        val digest = MessageDigest.getInstance("SHA-256").digest(payload.toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+}

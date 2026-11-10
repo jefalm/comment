@@ -67,5 +67,14 @@ class NetworkSecurityAndAttributionTest {
         assertEquals("https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=xyz123&key=REDACTED&access_token=REDACTED", sanitized)
         org.junit.Assert.assertFalse(sanitized.contains("AIzaSyFakeApiKey12345"))
         org.junit.Assert.assertFalse(sanitized.contains("secret_token"))
+
+        val encoded = SafeNetworkLogging.sanitizeUrl("https://example.test/path?k%65y=topsecret&part=snippet")
+        org.junit.Assert.assertEquals("https://example.test/path?k%65y=REDACTED&part=snippet", encoded)
+        val headers = SafeNetworkLogging.sanitizeHeaders(
+            mapOf("Authorization" to "Bearer secret", "X-Goog-Api-Key" to "key", "X-Title" to "Analyzer")
+        )
+        assertEquals("REDACTED", headers["Authorization"])
+        assertEquals("REDACTED", headers["X-Goog-Api-Key"])
+        assertEquals("Analyzer", headers["X-Title"])
     }
 }

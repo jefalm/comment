@@ -1,5 +1,7 @@
 package com.example.commentanalyzer.ui.viewer
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.commentanalyzer.domain.model.CommentStatistics
 import com.example.commentanalyzer.domain.model.UiComment
 import com.example.commentanalyzer.domain.model.VideoDetails
@@ -23,17 +26,21 @@ import com.example.commentanalyzer.domain.model.VideoDetails
 @Composable
 fun CommentViewerScreen(
     viewModel: CommentViewerViewModel,
+    onManageApiKey: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val txtPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) viewModel.clearTxtSelection() else viewModel.prepareTxtImport(uri)
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("YouTube Comment Analyzer") },
                 actions = {
-                    IconButton(onClick = { viewModel.loadExportFile() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Reload Export")
+                    IconButton(onClick = onManageApiKey) {
+                        Icon(Icons.Default.Settings, contentDescription = "YouTube API key settings")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -78,10 +85,35 @@ fun CommentViewerScreen(
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
-                                Button(onClick = { viewModel.loadExportFile() }) {
-                                    Text("Retry")
-                                }
                             }
+                        }
+                    }
+                }
+                state.exportData == null -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(vertical = 16.dp)
+                    ) {
+                        item {
+                            Text("Source: ${export.sourceType.name}", style = MaterialTheme.typography.labelMedium)
+                        }
+                        item {
+                            ImportSourcesPanel(
+                                state = state,
+                                viewModel = viewModel,
+                                onPickTxt = { txtPicker.launch(arrayOf("text/plain", "application/octet-stream")) }
+                            )
+                        }
+                        if (state.importProgress?.completed == true) {
+                            item {
+                                Text(
+                                    "Saved ${state.importProgress.itemsInserted} comments and replies",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            }
+                        } else {
+                            item { Text("No comments imported", style = MaterialTheme.typography.bodyLarge) }
                         }
                     }
                 }
@@ -123,6 +155,13 @@ fun CommentViewerScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = PaddingValues(vertical = 16.dp)
                     ) {
+                        item {
+                            ImportSourcesPanel(
+                                state = state,
+                                viewModel = viewModel,
+                                onPickTxt = { txtPicker.launch(arrayOf("text/plain", "application/octet-stream")) }
+                            )
+                        }
                         // Video Details Section
                         item {
                             VideoDetailsCard(video = export.videoDetails)
@@ -203,6 +242,102 @@ fun CommentViewerScreen(
 }
 
 @Composable
+private fun ImportSourcesPanel(
+    state: CommentViewerUiState,
+    viewModel: CommentViewerViewModel,
+    onPickTxt: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("Import comments", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            OutlinedTextField(
+                value = state.youtubeInput,
+                onValueChange = viewModel::setYouTubeInput,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("YouTube URL or video ID") },
+                enabled = !state.isImportRunning
+            )
+            Button(
+                onClick = viewModel::previewYouTube,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !state.isLoadingPreview && !state.isImportRunning && state.youtubeInput.isNotBlank()
+            ) {
+                if (state.isLoadingPreview) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Text("Preview YouTube video")
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = state.includeReplies,
+                    onCheckedChange = viewModel::setIncludeReplies,
+                    enabled = !state.isImportRunning
+                )
+                Text("Include all replies")
+            }
+            if (!state.hasYouTubeApiKey) {
+                Text("Add a YouTube Data API key in Settings to preview and import.", style = MaterialTheme.typography.bodySmall)
+            }
+            state.youtubePreview?.let { video ->
+                HorizontalDivider()
+                Text(video.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                Text(video.channelTitle, style = MaterialTheme.typography.bodyMedium)
+                Text("Views: ${video.viewCount?.toString() ?: "Unavailable"}", style = MaterialTheme.typography.bodySmall)
+                Text("Likes: ${video.likeCount?.toString() ?: "Unavailable"}", style = MaterialTheme.typography.bodySmall)
+                Text("Comments: ${video.commentCount?.toString() ?: "Unavailable"}", style = MaterialTheme.typography.bodySmall)
+                Button(onClick = viewModel::importYouTube, enabled = !state.isImportRunning, modifier = Modifier.fillMaxWidth()) {
+                    Text("Import from YouTube")
+                }
+            }
+            OutlinedButton(onClick = onPickTxt, enabled = !state.isReadingTxt && !state.isImportRunning, modifier = Modifier.fillMaxWidth()) {
+                Text("Import TXT")
+            }
+            if (state.isReadingTxt) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text("Reading and validating TXT export")
+                }
+            }
+            state.txtErrorCode?.let { Text("TXT validation failed: $it", color = MaterialTheme.colorScheme.error) }
+            state.txtPreview?.let { export ->
+                HorizontalDivider()
+                Text(state.txtFileName ?: "TXT export", style = MaterialTheme.typography.titleSmall)
+                Text(export.videoDetails.title, style = MaterialTheme.typography.bodyMedium)
+                Text(export.videoDetails.channel, style = MaterialTheme.typography.bodySmall)
+                Text("Views: ${export.videoDetails.views}", style = MaterialTheme.typography.bodySmall)
+                Text("Unlabeled statistic: ${export.videoDetails.unlabeledStatisticRaw}", style = MaterialTheme.typography.bodySmall)
+                Text("Top-level: ${export.statistics.topLevelComments} · Replies: ${export.statistics.declaredReplyCount}", style = MaterialTheme.typography.bodySmall)
+                Text("Total likes: ${export.statistics.totalLikes}", style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = viewModel::confirmTxtImport, enabled = !state.isImportRunning) {
+                        Text("Confirm TXT import")
+                    }
+                    TextButton(onClick = viewModel::clearTxtSelection) { Text("Discard") }
+                }
+            }
+            state.importProgress?.let { progress ->
+                HorizontalDivider()
+                Text(
+                    if (progress.completed) "Import complete" else "Import progress",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text("${progress.itemsInserted} saved · ${progress.itemsDeduplicated} duplicates · ${progress.itemsSeen} seen", style = MaterialTheme.typography.bodySmall)
+            }
+            state.importErrorCode?.let { Text("Import status: $it", color = MaterialTheme.colorScheme.error) }
+            if (state.isImportRunning) {
+                TextButton(onClick = viewModel::cancelImport) { Text("Cancel import") }
+            } else if (state.resumableImportId != null) {
+                OutlinedButton(onClick = { viewModel.resumeYouTube(state.resumableImportId) }) {
+                    Text("Resume interrupted YouTube import")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun VideoDetailsCard(video: VideoDetails) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -228,7 +363,7 @@ fun VideoDetailsCard(video: VideoDetails) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(text = "👀 ${video.views} views", style = MaterialTheme.typography.bodySmall)
-                Text(text = "👍 ${video.likes} likes", style = MaterialTheme.typography.bodySmall)
+                Text(text = "Unlabeled: ${video.unlabeledStatisticRaw}", style = MaterialTheme.typography.bodySmall)
                 Text(text = "💬 ${video.totalCommentsCount} comments", style = MaterialTheme.typography.bodySmall)
             }
             Spacer(modifier = Modifier.height(4.dp))

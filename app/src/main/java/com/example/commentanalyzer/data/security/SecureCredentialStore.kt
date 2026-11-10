@@ -5,7 +5,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
 class SecureCredentialStore(context: Context) {
-    private val sharedPreferences = try {
+    private val sharedPreferences = run {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
@@ -16,8 +16,6 @@ class SecureCredentialStore(context: Context) {
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
-    } catch (e: Exception) {
-        context.getSharedPreferences("insecure_fallback_prefs", Context.MODE_PRIVATE)
     }
 
     fun saveApiKey(keyName: String, keyVal: String) {

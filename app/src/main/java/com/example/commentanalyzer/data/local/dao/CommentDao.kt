@@ -16,6 +16,9 @@ interface CommentDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertComments(comments: List<CommentEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertCommentsIgnoringDuplicates(comments: List<CommentEntity>): List<Long>
+
     @Query("SELECT * FROM comments WHERE localId = :localId")
     suspend fun getCommentById(localId: String): CommentEntity?
 

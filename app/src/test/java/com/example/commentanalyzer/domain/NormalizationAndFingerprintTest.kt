@@ -1,11 +1,13 @@
 package com.example.commentanalyzer.domain
 
 import com.example.commentanalyzer.domain.fingerprint.FingerprintV1
+import com.example.commentanalyzer.domain.fingerprint.FingerprintV2
 import com.example.commentanalyzer.domain.normalize.AuthorNormalizer
 import com.example.commentanalyzer.domain.normalize.TextNormalizer
 import com.example.commentanalyzer.domain.normalize.TimestampNormalizer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NormalizationAndFingerprintTest {
@@ -49,5 +51,16 @@ class NormalizationAndFingerprintTest {
         )
         assertEquals(hash1, hash2)
         assertEquals(64, hash1.length) // SHA-256 hex length
+    }
+
+    @Test
+    fun txtFingerprintUsesRawLocalTimestampWithoutTimezoneConversion() {
+        val first = FingerprintV2.compute("txt:run-1", null, "same text", "11/9/2026, 1:00:00 PM", "Alice")
+        val same = FingerprintV2.compute("txt:run-1", null, "same text", "11/9/2026, 1:00:00 PM", "Alice")
+        val differentTime = FingerprintV2.compute("txt:run-1", null, "same text", "11/9/2026, 2:00:00 PM", "Alice")
+
+        assertEquals(first, same)
+        assertTrue(first != differentTime)
+        assertEquals(64, first.length)
     }
 }

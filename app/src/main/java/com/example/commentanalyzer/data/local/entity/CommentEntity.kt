@@ -47,5 +47,10 @@ data class CommentEntity(
     val lastErrorCode: String?,
     val lastErrorSummary: String?,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val likeCount: Int? = null,
+    val declaredReplyCount: Int? = null,
+    val sourcePublishedAtRaw: String? = null,
+    val sourceUpdatedAtRaw: String? = null,
+    val publishedAtLocalDateTimeRaw: String? = null
 )
