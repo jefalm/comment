@@ -24,6 +24,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.commentanalyzer.R
 import com.example.commentanalyzer.ui.components.UiPresentationState
 import com.example.commentanalyzer.ui.components.UiStatusContent
+import androidx.compose.foundation.layout.padding
 
 private enum class AnalyzerDestination(
     val route: String,

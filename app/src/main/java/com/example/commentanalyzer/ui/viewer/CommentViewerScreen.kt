@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.commentanalyzer.R
 import com.example.commentanalyzer.domain.model.CommentStatistics
 import com.example.commentanalyzer.domain.model.UiComment
 import com.example.commentanalyzer.domain.model.VideoDetails
