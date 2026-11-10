@@ -57,6 +57,7 @@ fun CommentViewerScreen(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
+            val export = state.exportData
             when {
                 state.isLoading -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -89,15 +90,12 @@ fun CommentViewerScreen(
                         }
                     }
                 }
-                state.exportData == null -> {
+                export == null -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = PaddingValues(vertical = 16.dp)
                     ) {
-                        item {
-                            Text("Source: ${export.sourceType.name}", style = MaterialTheme.typography.labelMedium)
-                        }
                         item {
                             ImportSourcesPanel(
                                 state = state,
@@ -105,10 +103,11 @@ fun CommentViewerScreen(
                                 onPickTxt = { txtPicker.launch(arrayOf("text/plain", "application/octet-stream")) }
                             )
                         }
-                        if (state.importProgress?.completed == true) {
+                        val importProgress = state.importProgress
+                        if (importProgress?.completed == true) {
                             item {
                                 Text(
-                                    "Saved ${state.importProgress.itemsInserted} comments and replies",
+                                    "Saved ${importProgress.itemsInserted} comments and replies",
                                     style = MaterialTheme.typography.bodyLarge
                                 )
                             }
@@ -117,9 +116,7 @@ fun CommentViewerScreen(
                         }
                     }
                 }
-                state.exportData != null -> {
-                    val export = state.exportData!!
-
+                export != null -> {
                     // Filter and Sort comments
                     val filteredComments = remember(export.comments, state.searchQuery, state.sortOption) {
                         var list = export.comments
@@ -155,6 +152,9 @@ fun CommentViewerScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = PaddingValues(vertical = 16.dp)
                     ) {
+                        item {
+                            Text("Source: ${export.sourceType.name}", style = MaterialTheme.typography.labelMedium)
+                        }
                         item {
                             ImportSourcesPanel(
                                 state = state,

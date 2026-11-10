@@ -301,13 +301,6 @@ class CommentViewerViewModel(application: Application) : AndroidViewModel(applic
         _uiState.update { it.copy(txtFileName = null, txtFilePath = null, txtPreview = null, txtErrorCode = null) }
     }
 
-    private fun refreshApiKeyStatus() {
-        val hasKey = runCatching {
-            !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.YOUTUBE_API_KEY_NAME).isNullOrBlank()
-        }.getOrDefault(false)
-        _uiState.update { it.copy(hasYouTubeApiKey = hasKey) }
-    }
-
     private fun refreshResumableImport() {
         viewModelScope.launch {
             val saved = runCatching { app.database.importDao().getLatestResumableYouTubeImport() }.getOrNull()

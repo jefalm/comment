@@ -149,7 +149,7 @@ class YouTubeCommentImporter(
                     }
                     itemsSeen += 1 + uniqueEmbedded.size
 
-                    if (request.includeReplies && uniqueEmbedded.size < totalReplyCount) {
+                    if (request.includeReplies && totalReplyCount != null && uniqueEmbedded.size < totalReplyCount) {
                         val replyIds = uniqueEmbedded.mapTo(mutableSetOf(), CommentObject::id)
                         var replyPageToken = if (request.activeParentCommentId == topLevel.id) request.nextReplyPageToken else null
                         do {
