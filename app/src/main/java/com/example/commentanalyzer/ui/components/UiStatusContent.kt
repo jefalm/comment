@@ -31,28 +31,37 @@ sealed interface UiPresentationState {
         @StringRes val messageRes: Int
     ) : UiPresentationState
 
-    data class Error(val kind: UiErrorKind) : UiPresentationState
+    data class Error(
+        @StringRes val messageRes: Int = R.string.ui_status_error
+    ) : UiPresentationState
 }
 
-enum class UiErrorKind(
-    val isRecoverable: Boolean,
+data class UiStatusCopy(
+    @StringRes val titleRes: Int? = null,
     @StringRes val messageRes: Int
-) {
-    RECOVERABLE(true, R.string.ui_status_recoverable_error),
-    PERMANENT(false, R.string.ui_status_permanent_error);
+)
 
-    companion object {
-        fun fromRetryable(retryable: Boolean): UiErrorKind =
-            if (retryable) RECOVERABLE else PERMANENT
-    }
+internal fun UiPresentationState.toStatusCopy(): UiStatusCopy = when (this) {
+    UiPresentationState.Loading -> UiStatusCopy(messageRes = R.string.ui_status_loading)
+    is UiPresentationState.Empty -> UiStatusCopy(messageRes = messageRes)
+    is UiPresentationState.Unavailable -> UiStatusCopy(titleRes, messageRes)
+    is UiPresentationState.Error -> UiStatusCopy(messageRes = messageRes)
 }
+
+data class UiStatusAction(
+    @StringRes val labelRes: Int,
+    val onClick: () -> Unit
+)
 
 @Composable
 fun UiStatusContent(
     status: UiPresentationState,
     modifier: Modifier = Modifier,
-    onRetry: (() -> Unit)? = null
+    action: UiStatusAction? = null
 ) {
+    val copy = status.toStatusCopy()
+    val loadingDescription = stringResource(R.string.ui_status_loading_description)
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -61,46 +70,33 @@ fun UiStatusContent(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        when (status) {
-            UiPresentationState.Loading -> {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .testTag("ui_status_loading_indicator")
-                        .semantics { contentDescription = "Loading" }
-                )
-                Text(stringResource(R.string.ui_status_loading))
+        if (status == UiPresentationState.Loading) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .testTag("ui_status_loading_indicator")
+                    .semantics { contentDescription = loadingDescription }
+            )
+        }
+        copy.titleRes?.let { titleRes ->
+            Text(
+                text = stringResource(titleRes),
+                modifier = Modifier.testTag("ui_status_title"),
+                style = MaterialTheme.typography.headlineSmall
+            )
+        }
+        Text(
+            text = stringResource(copy.messageRes),
+            modifier = Modifier.testTag("ui_status_message"),
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (status is UiPresentationState.Error) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurface
             }
-            is UiPresentationState.Empty -> {
-                Text(
-                    text = stringResource(status.messageRes),
-                    modifier = Modifier.testTag("ui_status_empty"),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
-            is UiPresentationState.Unavailable -> {
-                Text(
-                    text = stringResource(status.titleRes),
-                    modifier = Modifier.testTag("ui_status_unavailable_title"),
-                    style = MaterialTheme.typography.headlineSmall
-                )
-                Text(
-                    text = stringResource(status.messageRes),
-                    modifier = Modifier.testTag("ui_status_unavailable_message"),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
-            is UiPresentationState.Error -> {
-                Text(
-                    text = stringResource(status.kind.messageRes),
-                    modifier = Modifier.testTag("ui_status_error"),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.error
-                )
-                if (status.kind.isRecoverable && onRetry != null) {
-                    Button(onClick = onRetry) {
-                        Text(stringResource(R.string.ui_status_retry))
-                    }
-                }
+        )
+        action?.let {
+            Button(onClick = it.onClick) {
+                Text(stringResource(it.labelRes))
             }
         }
     }

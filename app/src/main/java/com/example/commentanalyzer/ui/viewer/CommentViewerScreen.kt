@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
@@ -15,12 +17,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.commentanalyzer.domain.model.CommentStatistics
 import com.example.commentanalyzer.domain.model.UiComment
 import com.example.commentanalyzer.domain.model.VideoDetails
+import com.example.commentanalyzer.ingestion.youtube.YouTubeVideoIdParser
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -253,21 +258,48 @@ private fun ImportSourcesPanel(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("Import comments", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            val parsedVideoId = YouTubeVideoIdParser.parse(state.youtubeInput)
+            val canLoadVideo = parsedVideoId != null && state.hasYouTubeApiKey &&
+                !state.isLoadingPreview && !state.isImportRunning
             OutlinedTextField(
                 value = state.youtubeInput,
                 onValueChange = viewModel::setYouTubeInput,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                label = { Text("YouTube URL or video ID") },
+                label = { Text(stringResource(R.string.home_youtube_input_label)) },
+                isError = state.youtubeInput.isNotBlank() && parsedVideoId == null,
+                supportingText = {
+                    Text(
+                        stringResource(
+                            if (state.youtubeInput.isNotBlank() && parsedVideoId == null) {
+                                R.string.home_youtube_input_invalid
+                            } else {
+                                R.string.home_youtube_input_supporting
+                            }
+                        )
+                    )
+                },
+                trailingIcon = {
+                    if (state.youtubeInput.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.setYouTubeInput("") }) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = stringResource(R.string.home_youtube_input_clear)
+                            )
+                        }
+                    }
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                keyboardActions = KeyboardActions(onGo = { if (canLoadVideo) viewModel.previewYouTube() }),
                 enabled = !state.isImportRunning
             )
             Button(
                 onClick = viewModel::previewYouTube,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !state.isLoadingPreview && !state.isImportRunning && state.youtubeInput.isNotBlank()
+                enabled = canLoadVideo
             ) {
                 if (state.isLoadingPreview) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text("Preview YouTube video")
+                else Text(stringResource(R.string.home_youtube_load_video))
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
@@ -278,7 +310,7 @@ private fun ImportSourcesPanel(
                 Text("Include all replies")
             }
             if (!state.hasYouTubeApiKey) {
-                Text("Add a YouTube Data API key in Settings to preview and import.", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.home_youtube_key_required), style = MaterialTheme.typography.bodySmall)
             }
             state.youtubePreview?.let { video ->
                 HorizontalDivider()

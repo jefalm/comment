@@ -39,6 +39,7 @@ private enum class AnalyzerDestination(
 @Composable
 fun CommentAnalyzerNavigation(
     homeContent: @Composable () -> Unit,
+    settingsContent: @Composable () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val navController = rememberNavController()
@@ -97,13 +98,7 @@ fun CommentAnalyzerNavigation(
                 )
             }
             composable(AnalyzerDestination.SETTINGS.route) {
-                UiStatusContent(
-                    status = UiPresentationState.Unavailable(
-                        titleRes = R.string.settings_unavailable_title,
-                        messageRes = R.string.settings_unavailable_message
-                    ),
-                    modifier = Modifier.testTag("settings_unavailable")
-                )
+                settingsContent()
             }
         }
     }

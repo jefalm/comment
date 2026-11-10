@@ -16,6 +16,7 @@ import com.example.commentanalyzer.domain.model.VideoCommentExportData
 import com.example.commentanalyzer.ingestion.file.TxtExportParser
 import com.example.commentanalyzer.ingestion.file.TxtParseException
 import com.example.commentanalyzer.ingestion.youtube.YouTubeImportException
+import com.example.commentanalyzer.ingestion.youtube.YouTubeVideoIdParser
 import com.example.commentanalyzer.ingestion.youtube.YouTubeVideoPreview
 import com.example.commentanalyzer.worker.CommentAnalyzerWorker
 import java.io.File
@@ -71,6 +72,7 @@ class CommentViewerViewModel(application: Application) : AndroidViewModel(applic
     private val _uiState = MutableStateFlow(CommentViewerUiState())
     val uiState: StateFlow<CommentViewerUiState> = _uiState.asStateFlow()
     private var importJob: Job? = null
+    private var previewJob: Job? = null
 
     init {
         refreshApiKeyStatus()
@@ -78,7 +80,16 @@ class CommentViewerViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun setYouTubeInput(value: String) {
-        _uiState.update { it.copy(youtubeInput = value, youtubePreview = null, importErrorCode = null) }
+        previewJob?.cancel()
+        previewJob = null
+        _uiState.update {
+            it.copy(
+                youtubeInput = value,
+                youtubePreview = null,
+                isLoadingPreview = false,
+                importErrorCode = null
+            )
+        }
     }
 
     fun setIncludeReplies(include: Boolean) {
@@ -93,8 +104,11 @@ class CommentViewerViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun previewYouTube() {
-        val locator = _uiState.value.youtubeInput.trim()
-        viewModelScope.launch {
+        val state = _uiState.value
+        if (state.isLoadingPreview || state.isImportRunning || !state.hasYouTubeApiKey) return
+        val locator = state.youtubeInput.trim()
+        if (YouTubeVideoIdParser.parse(locator) == null) return
+        previewJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoadingPreview = true, youtubePreview = null, importErrorCode = null) }
             try {
                 val preview = app.youtubeCommentImporter.preview(locator)

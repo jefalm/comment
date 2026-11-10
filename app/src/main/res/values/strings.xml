@@ -8,11 +8,19 @@
     <string name="comments_unavailable_message">Comment browsing is unavailable until Room-backed paging is verified.</string>
     <string name="analysis_unavailable_title">Analysis</string>
     <string name="analysis_unavailable_message">Analysis summaries are unavailable until persisted results and aggregates are verified.</string>
-    <string name="settings_unavailable_title">Settings</string>
-    <string name="settings_unavailable_message">Settings controls are not available yet. YouTube key management remains accessible from Home.</string>
     <string name="ui_status_loading">Loading</string>
+    <string name="ui_status_loading_description">Loading</string>
     <string name="ui_status_empty">No content is available.</string>
-    <string name="ui_status_recoverable_error">Something went wrong. You can try again.</string>
-    <string name="ui_status_permanent_error">This action cannot be completed.</string>
-    <string name="ui_status_retry">Retry</string>
+    <string name="ui_status_error">Something went wrong.</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_youtube_title">YouTube API key</string>
+    <string name="settings_youtube_configured">Configured</string>
+    <string name="settings_youtube_not_configured">Not configured</string>
+    <string name="settings_youtube_manage">Manage YouTube API key</string>
+    <string name="home_youtube_input_label">YouTube URL or video ID</string>
+    <string name="home_youtube_input_supporting">Enter a supported YouTube URL or 11-character video ID.</string>
+    <string name="home_youtube_input_invalid">Enter a valid supported YouTube URL or video ID.</string>
+    <string name="home_youtube_input_clear">Clear YouTube input</string>
+    <string name="home_youtube_load_video">Load video</string>
+    <string name="home_youtube_key_required">Add a YouTube Data API key in Settings to load a video.</string>
 </resources>

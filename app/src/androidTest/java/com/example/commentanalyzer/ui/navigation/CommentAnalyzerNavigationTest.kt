@@ -44,7 +44,7 @@ class CommentAnalyzerNavigationTest {
         composeRule.onNodeWithTag("analysis_unavailable").assertIsDisplayed()
 
         composeRule.onNodeWithTag("destination_settings").performClick()
-        composeRule.onNodeWithTag("settings_unavailable").assertIsDisplayed()
+        composeRule.onNodeWithText("YouTube settings content").assertIsDisplayed()
 
         composeRule.onNodeWithTag("destination_home").performClick()
         composeRule.onNodeWithTag("destination_home").assertIsSelected()
@@ -75,7 +75,10 @@ class CommentAnalyzerNavigationTest {
             val dispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
             SideEffect { backDispatcher = dispatcher }
             MaterialTheme {
-                CommentAnalyzerNavigation(homeContent = { Text("Home content") })
+                CommentAnalyzerNavigation(
+                    homeContent = { Text("Home content") },
+                    settingsContent = { Text("YouTube settings content") }
+                )
             }
         }
         return restorationTester

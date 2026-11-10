@@ -12,11 +12,14 @@ import androidx.appcompat.app.AlertDialog
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.lifecycleScope
 import com.example.commentanalyzer.network.youtube.YouTubeApiService
 import com.example.commentanalyzer.ui.navigation.CommentAnalyzerNavigation
+import com.example.commentanalyzer.ui.settings.YouTubeCredentialSettingsScreen
 import com.example.commentanalyzer.ui.viewer.CommentViewerScreen
 import com.example.commentanalyzer.ui.viewer.CommentViewerViewModel
 import kotlinx.coroutines.Dispatchers
@@ -33,10 +36,17 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val viewModel: CommentViewerViewModel = viewModel()
+                    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
                     CommentAnalyzerNavigation(
                         homeContent = {
                             CommentViewerScreen(
                                 viewModel = viewModel,
+                                onManageApiKey = { showYouTubeApiKeyDialog(viewModel) }
+                            )
+                        },
+                        settingsContent = {
+                            YouTubeCredentialSettingsScreen(
+                                hasYouTubeApiKey = uiState.hasYouTubeApiKey,
                                 onManageApiKey = { showYouTubeApiKeyDialog(viewModel) }
                             )
                         }
