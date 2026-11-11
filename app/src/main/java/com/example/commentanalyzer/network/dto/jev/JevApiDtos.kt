@@ -2,28 +2,36 @@ package com.example.commentanalyzer.network.dto.jev
 
 data class JevRequest(
     val model: String = "typesafe/jev-1.14",
-    val states: List<JevStateItem>
+    val state: String,
+    val questions: Map<String, JevQuestionItem>
 )
 
-data class JevStateItem(
-    val id: String,
-    val text: String
+data class JevQuestionItem(
+    val type: String = "noul",
+    val instructions: String,
+    val criteria: JevCriteria
 )
 
-data class JevResponse(
-    val model: String,
+data class JevCriteria(
+    val `true`: String,
+    val `false`: String
+)
+
+data class JevDecisionResponse(
+    val id: String?,
+    val model: String?,
     val provider: String?,
     val usage: JevUsage?,
-    val results: List<JevResultItem>
+    val answers: Map<String, JevAnswerValue>?
+)
+
+data class JevAnswerValue(
+    val type: String?,
+    val noul: Double?
 )
 
 data class JevUsage(
     val inputTokens: Long?,
     val outputTokens: Long?,
     val costUsd: Double?
-)
-
-data class JevResultItem(
-    val id: String,
-    val answers: Map<String, Double>
 )
