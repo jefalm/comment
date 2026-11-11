@@ -5,10 +5,26 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.ColumnInfo
 import androidx.paging.PagingSource
 import com.example.commentanalyzer.data.local.entity.CommentEntity
 import com.example.commentanalyzer.data.local.entity.ProcessingState
 import com.example.commentanalyzer.data.local.entity.ProcessingStage
+import kotlinx.coroutines.flow.Flow
+
+data class AnalysisProcessingCounts(
+    @ColumnInfo(name = "totalComments") val totalComments: Long,
+    @ColumnInfo(name = "locallyRejected") val locallyRejected: Long,
+    @ColumnInfo(name = "jevRejected") val jevRejected: Long,
+    @ColumnInfo(name = "completed") val completed: Long,
+    @ColumnInfo(name = "retrying") val retrying: Long,
+    @ColumnInfo(name = "permanentlyFailed") val permanentlyFailed: Long
+)
+
+data class AnalysisDistributionCount(
+    val value: String,
+    val count: Long
+)
 
 @Dao
 interface CommentDao {
@@ -64,6 +80,83 @@ interface CommentDao {
         now: Long,
         limit: Int
     ): List<CommentEntity>
+
+    @Query(
+        """
+        SELECT COUNT(*) AS totalComments,
+            COALESCE(SUM(CASE WHEN c.processingState = 'LOCAL_REJECTED' THEN 1 ELSE 0 END), 0) AS locallyRejected,
+            COALESCE(SUM(CASE WHEN c.processingState = 'JEV_REJECTED' THEN 1 ELSE 0 END), 0) AS jevRejected,
+            COALESCE(SUM(CASE WHEN c.processingState = 'COMPLETED' AND EXISTS (
+                SELECT 1 FROM analysis_results r
+                WHERE r.commentId = c.localId
+                    AND r.processingConfigVersion = :configVersion
+                    AND r.stage = 'GLM_ANALYSIS'
+            ) THEN 1 ELSE 0 END), 0) AS completed,
+            COALESCE(SUM(CASE WHEN c.processingState = 'RETRY_WAIT' THEN 1 ELSE 0 END), 0) AS retrying,
+            COALESCE(SUM(CASE WHEN c.processingState = 'FAILED_PERMANENT' THEN 1 ELSE 0 END), 0) AS permanentlyFailed
+        FROM comments c
+        WHERE c.importId = :importId
+            AND c.processingConfigVersion = :configVersion
+        """
+    )
+    fun observeAnalysisProcessingCounts(
+        importId: String,
+        configVersion: Long
+    ): Flow<AnalysisProcessingCounts>
+
+    @Query(
+        """
+        SELECT DISTINCT processingConfigVersion
+        FROM comments
+        WHERE importId = :importId
+        ORDER BY processingConfigVersion DESC
+        """
+    )
+    fun observeAnalysisConfigVersions(importId: String): Flow<List<Long>>
+
+    @Query(
+        """
+        SELECT c.category AS value, COUNT(*) AS count
+        FROM comments c
+        WHERE c.importId = :importId
+            AND c.processingConfigVersion = :configVersion
+            AND c.category IS NOT NULL
+            AND EXISTS (
+                SELECT 1 FROM analysis_results r
+                WHERE r.commentId = c.localId
+                    AND r.processingConfigVersion = :configVersion
+                    AND r.stage = 'GLM_ANALYSIS'
+            )
+        GROUP BY c.category
+        ORDER BY c.category
+        """
+    )
+    fun observeAnalysisCategoryCounts(
+        importId: String,
+        configVersion: Long
+    ): Flow<List<AnalysisDistributionCount>>
+
+    @Query(
+        """
+        SELECT c.sentiment AS value, COUNT(*) AS count
+        FROM comments c
+        WHERE c.importId = :importId
+            AND c.processingConfigVersion = :configVersion
+            AND c.sentiment IS NOT NULL
+            AND EXISTS (
+                SELECT 1 FROM analysis_results r
+                WHERE r.commentId = c.localId
+                    AND r.processingConfigVersion = :configVersion
+                    AND r.stage = 'GLM_ANALYSIS'
+            )
+        GROUP BY c.sentiment
+        ORDER BY c.sentiment
+        """
+    )
+    fun observeAnalysisSentimentCounts(
+        importId: String,
+        configVersion: Long
+    ): Flow<List<AnalysisDistributionCount>>
 
     @Update
     suspend fun updateComment(comment: CommentEntity): Int

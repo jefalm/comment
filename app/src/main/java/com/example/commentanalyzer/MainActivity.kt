@@ -20,6 +20,7 @@ import androidx.lifecycle.lifecycleScope
 import com.example.commentanalyzer.network.youtube.YouTubeApiService
 import com.example.commentanalyzer.ui.comments.CommentsScreen
 import com.example.commentanalyzer.ui.comments.CommentsViewModel
+import com.example.commentanalyzer.ui.analysis.AnalysisViewModel
 import com.example.commentanalyzer.ui.navigation.CommentAnalyzerNavigation
 import com.example.commentanalyzer.ui.settings.YouTubeCredentialSettingsScreen
 import com.example.commentanalyzer.ui.viewer.CommentViewerScreen
@@ -39,6 +40,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val viewModel: CommentViewerViewModel = viewModel()
                     val commentsViewModel: CommentsViewModel = viewModel()
+                    val analysisViewModel: AnalysisViewModel = viewModel()
                     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
                     CommentAnalyzerNavigation(
                         homeContent = {
@@ -48,6 +50,7 @@ class MainActivity : ComponentActivity() {
                             )
                         },
                         commentsContent = { CommentsScreen(commentsViewModel) },
+                        analysisViewModel = analysisViewModel,
                         settingsContent = {
                             YouTubeCredentialSettingsScreen(
                                 hasYouTubeApiKey = uiState.hasYouTubeApiKey,

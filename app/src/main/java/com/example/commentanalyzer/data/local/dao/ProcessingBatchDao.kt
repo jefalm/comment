@@ -5,9 +5,17 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.ColumnInfo
 import com.example.commentanalyzer.data.local.entity.ProcessingBatchEntity
 import com.example.commentanalyzer.data.local.entity.ProcessingBatchItemEntity
 import com.example.commentanalyzer.data.local.entity.ProcessingStage
+import kotlinx.coroutines.flow.Flow
+
+data class AnalysisUsageTotals(
+    @ColumnInfo(name = "inputTokens") val inputTokens: Long?,
+    @ColumnInfo(name = "outputTokens") val outputTokens: Long?,
+    @ColumnInfo(name = "costUsd") val costUsd: Double?
+)
 
 @Dao
 interface ProcessingBatchDao {
@@ -42,6 +50,20 @@ interface ProcessingBatchDao {
         now: Long,
         limit: Int
     ): List<ProcessingBatchEntity>
+
+    @Query(
+        """
+        SELECT SUM(inputTokens) AS inputTokens,
+            SUM(outputTokens) AS outputTokens,
+            SUM(costUsd) AS costUsd
+        FROM processing_batches
+        WHERE importId = :importId
+            AND processingConfigVersion = :configVersion
+            AND status = 'SUCCEEDED'
+            AND stage IN ('JEV_GATE', 'GLM_ANALYSIS')
+        """
+    )
+    fun observeAnalysisUsageTotals(importId: String, configVersion: Long): Flow<AnalysisUsageTotals>
 
     @Query("SELECT * FROM processing_batch_items WHERE batchId = :batchId ORDER BY ordinal")
     suspend fun getItemsForBatch(batchId: String): List<ProcessingBatchItemEntity>

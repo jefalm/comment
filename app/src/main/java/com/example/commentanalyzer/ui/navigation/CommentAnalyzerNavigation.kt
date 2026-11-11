@@ -22,9 +22,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.commentanalyzer.R
-import com.example.commentanalyzer.ui.components.UiPresentationState
-import com.example.commentanalyzer.ui.components.UiStatusContent
 import androidx.compose.foundation.layout.padding
+import com.example.commentanalyzer.ui.analysis.AnalysisScreen
+import com.example.commentanalyzer.ui.analysis.AnalysisViewModel
 
 private enum class AnalyzerDestination(
     val route: String,
@@ -41,6 +41,7 @@ private enum class AnalyzerDestination(
 fun CommentAnalyzerNavigation(
     homeContent: @Composable () -> Unit,
     commentsContent: @Composable () -> Unit,
+    analysisViewModel: AnalysisViewModel,
     settingsContent: @Composable () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -85,13 +86,7 @@ fun CommentAnalyzerNavigation(
                 commentsContent()
             }
             composable(AnalyzerDestination.ANALYSIS.route) {
-                UiStatusContent(
-                    status = UiPresentationState.Unavailable(
-                        titleRes = R.string.analysis_unavailable_title,
-                        messageRes = R.string.analysis_unavailable_message
-                    ),
-                    modifier = Modifier.testTag("analysis_unavailable")
-                )
+                AnalysisScreen(analysisViewModel)
             }
             composable(AnalyzerDestination.SETTINGS.route) {
                 settingsContent()
