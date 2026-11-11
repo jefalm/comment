@@ -8,7 +8,7 @@ data class BatchLimits(
 
 object BatchPlanner {
     val JEV_LIMITS = BatchLimits(maxCount = 50, maxBytes = 24 * 1024L, maxTokens = 8000L)
-    val GLM_LIMITS = BatchLimits(maxCount = 200, maxBytes = 256 * 1024L, maxTokens = 32000L)
+    val GLM_LIMITS = BatchLimits(maxCount = 20, maxBytes = 256 * 1024L, maxTokens = 32000L)
 
     data class Item(val id: String, val text: String)
 

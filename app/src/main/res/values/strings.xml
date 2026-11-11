@@ -31,6 +31,15 @@
     <string name="analysis_output_tokens">Output tokens</string>
     <string name="analysis_known_cost">Known cost</string>
     <string name="analysis_unknown">Unknown</string>
+    <string name="analysis_start">Analyze comments</string>
+    <string name="analysis_readiness_required">Add an OpenRouter API key and enable remote processing consent in Settings to analyze comments.</string>
+    <string name="analysis_running">Analyzing comments…</string>
+    <string name="analysis_no_eligible_comments">No eligible comments required further analysis.</string>
+    <string name="analysis_completed_message">Analysis succeeded. Saved results have been refreshed.</string>
+    <string name="analysis_partial_message">Analysis partially completed. Some comments failed permanently.</string>
+    <string name="analysis_persisted_failure_message">Analysis failed. No comments were successfully analyzed.</string>
+    <string name="analysis_action_failed">Analysis could not be completed. Check your connection and try again.</string>
+    <string name="analysis_cancelled">Analysis was stopped. Saved results remain available.</string>
     <string name="ui_status_loading">Loading</string>
     <string name="ui_status_loading_description">Loading</string>
     <string name="ui_status_empty">No content is available.</string>

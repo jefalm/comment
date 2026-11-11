@@ -10,10 +10,19 @@ import com.example.commentanalyzer.ingestion.youtube.YouTubeCommentImporter
 import com.example.commentanalyzer.network.youtube.YouTubeApiService
 
 class CommentAnalyzerApplication : Application() {
-    val container: AppContainer by lazy { ProductionAppContainer() }
-
     val database: AppDatabase by lazy { AppDatabase.create(this) }
     val secureCredentialStore: SecureCredentialStore by lazy { SecureCredentialStore(this) }
+    val container: AppContainer by lazy {
+        ProductionAppContainer(
+            database = database,
+            openRouterKeyProvider = {
+                secureCredentialStore.getApiKey(OPENROUTER_API_KEY_NAME)
+            },
+            remoteProcessingConsentProvider = {
+                secureCredentialStore.getBoolean(OPENROUTER_CONSENT_KEY, false)
+            }
+        )
+    }
     val txtExportImporter: TxtExportImporter by lazy { TxtExportImporter(database) }
     val youtubeImportPageSink: RoomYouTubeImportPageSink by lazy { RoomYouTubeImportPageSink(database) }
     val youtubeCommentImporter: YouTubeCommentImporter by lazy {

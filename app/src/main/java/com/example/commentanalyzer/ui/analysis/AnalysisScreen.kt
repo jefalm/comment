@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearProgressIndicator
@@ -31,6 +32,7 @@ import java.util.Locale
 @Composable
 fun AnalysisScreen(viewModel: AnalysisViewModel, modifier: Modifier = Modifier) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val persistedWorkInProgress = (state.summary?.processing?.inProgress ?: 0L) > 0
 
     Column(
         modifier = modifier
@@ -46,6 +48,51 @@ fun AnalysisScreen(viewModel: AnalysisViewModel, modifier: Modifier = Modifier) 
             ImportSelector(state, viewModel)
             if (state.configVersions.isNotEmpty()) {
                 ConfigSelector(state, viewModel)
+            }
+            if (state.selectedImportId != null && state.selectedConfigVersion != null) {
+                if (state.isRemoteProcessingReady) {
+                    Button(
+                        onClick = viewModel::analyzeSelectedImport,
+                        enabled = !state.isAnalysisRunning && !persistedWorkInProgress,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.analysis_start))
+                    }
+                } else {
+                    Text(
+                        stringResource(R.string.analysis_readiness_required),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            if (state.isAnalysisRunning || persistedWorkInProgress) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text(stringResource(R.string.analysis_running))
+            }
+            state.analysisActionMessage?.let { message ->
+                val text = when (message) {
+                    AnalysisActionMessage.NOT_READY,
+                    AnalysisActionMessage.REMOTE_BLOCKED ->
+                        stringResource(R.string.analysis_readiness_required)
+                    AnalysisActionMessage.NO_ELIGIBLE_COMMENTS ->
+                        stringResource(R.string.analysis_no_eligible_comments)
+                    AnalysisActionMessage.SUCCEEDED ->
+                        stringResource(R.string.analysis_completed_message)
+                    AnalysisActionMessage.PARTIAL ->
+                        stringResource(R.string.analysis_partial_message)
+                    AnalysisActionMessage.ANALYSIS_FAILED ->
+                        stringResource(R.string.analysis_persisted_failure_message)
+                    AnalysisActionMessage.FAILED -> stringResource(R.string.analysis_action_failed)
+                    AnalysisActionMessage.CANCELLED -> stringResource(R.string.analysis_cancelled)
+                }
+                Text(
+                    text,
+                    color = if (message == AnalysisActionMessage.FAILED ||
+                        message == AnalysisActionMessage.ANALYSIS_FAILED ||
+                        message == AnalysisActionMessage.NOT_READY ||
+                        message == AnalysisActionMessage.REMOTE_BLOCKED
+                    ) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                )
             }
             when {
                 state.hasError -> Text(

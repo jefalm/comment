@@ -11,8 +11,11 @@ data class GlmRequest(
     @SerializedName("response_format")
     val responseFormat: GlmResponseFormat? = null,
     val provider: GlmProvider = GlmProvider(),
-    val reasoning: GlmReasoning = GlmReasoning()
+    val reasoning: GlmReasoning = GlmReasoning(),
+    val plugins: List<GlmPlugin> = emptyList()
 )
+
+data class GlmPlugin(val id: String)
 
 data class GlmMessage(
     val role: String,
@@ -59,5 +62,7 @@ data class GlmUsage(
 )
 
 data class GlmChoice(
-    val message: GlmMessage?
+    val message: GlmMessage?,
+    @SerializedName("finish_reason")
+    val finishReason: String? = null
 )

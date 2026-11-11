@@ -7,6 +7,8 @@ import com.example.commentanalyzer.domain.model.AnalysisInput
 import com.example.commentanalyzer.domain.model.AnalysisItemResult
 import com.example.commentanalyzer.network.dto.glm.GlmJsonSchema
 import com.example.commentanalyzer.network.dto.glm.GlmMessage
+import com.example.commentanalyzer.network.dto.glm.GlmPlugin
+import com.example.commentanalyzer.network.dto.glm.GlmProvider
 import com.example.commentanalyzer.network.dto.glm.GlmRequest
 import com.example.commentanalyzer.network.dto.glm.GlmResponse
 import com.example.commentanalyzer.network.dto.glm.GlmResponseFormat
@@ -68,7 +70,9 @@ class OpenRouterGlmDeepAnalyzer(
                     strict = true,
                     schema = responseSchema
                 )
-            )
+            ),
+            provider = GlmProvider(requireParameters = true),
+            plugins = listOf(GlmPlugin(id = "response-healing"))
         )
 
         val response = try {
@@ -131,7 +135,11 @@ class OpenRouterGlmDeepAnalyzer(
         if (choices.isNullOrEmpty() || choices.size != 1) {
             return result(batchId, requestedModel, response, emptyList(), "GLM_MISSING_RESPONSE_CONTENT")
         }
-        val content = choices.single().message?.content
+        val choice = choices.single()
+        if (choice.finishReason == "length") {
+            return result(batchId, requestedModel, response, emptyList(), "GLM_OUTPUT_TRUNCATED")
+        }
+        val content = choice.message?.content
         if (content.isNullOrBlank()) {
             return result(batchId, requestedModel, response, emptyList(), "GLM_MISSING_RESPONSE_CONTENT")
         }

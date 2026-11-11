@@ -12,6 +12,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -48,6 +49,11 @@ fun CommentAnalyzerNavigation(
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val selectedRoute = backStackEntry?.destination?.route ?: AnalyzerDestination.HOME.route
+    LaunchedEffect(selectedRoute) {
+        if (selectedRoute == AnalyzerDestination.ANALYSIS.route) {
+            analysisViewModel.refreshRemoteProcessingReadiness()
+        }
+    }
 
     Scaffold(
         modifier = modifier,

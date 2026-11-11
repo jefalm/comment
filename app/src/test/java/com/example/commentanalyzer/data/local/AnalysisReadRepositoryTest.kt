@@ -136,6 +136,18 @@ class AnalysisReadRepositoryTest {
         assertNull(summary.usage.costUsd)
     }
 
+    @Test
+    fun persistedInProgressStatesAreObservableForBackgroundAnalysis() = runBlocking {
+        database.commentDao().insertComment(
+            comment("jev-running", "import-a", 7, ProcessingState.JEV_IN_PROGRESS)
+                .copy(currentStage = ProcessingStage.JEV_GATE)
+        )
+
+        val summary = repository.observeSummary("import-a", 7).first()
+
+        assertEquals(1L, summary.processing.inProgress)
+    }
+
     private fun comment(
         id: String,
         importId: String,

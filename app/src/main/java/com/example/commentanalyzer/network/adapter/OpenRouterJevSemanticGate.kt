@@ -12,6 +12,10 @@ import com.example.commentanalyzer.network.dto.jev.JevQuestionItem
 import com.example.commentanalyzer.network.dto.jev.JevRequest
 import com.example.commentanalyzer.network.jev.JevApiService
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 class OpenRouterJevSemanticGate(
     private val jevApiService: JevApiService,
@@ -50,197 +54,132 @@ class OpenRouterJevSemanticGate(
         val requestedKey = contract.questionKey
         val batchId = "jev-batch-${System.currentTimeMillis()}"
 
-        val results = mutableListOf<GateItemResult>()
-        var resolvedModel = config.model
-        var provider: String? = null
-        var totalInputTokens = 0L
-        var totalOutputTokens = 0L
-        var totalCost = 0.0
-
-        for (input in batch) {
-            val request = JevRequest(
-                model = if (config.model.isNotBlank()) config.model else "typesafe/jev-1.14",
-                state = input.text,
-                questions = mapOf(
-                    requestedKey to JevQuestionItem(
-                        type = "noul",
-                        instructions = contract.instructions,
-                        criteria = JevCriteria(
-                            `true` = contract.trueCriterion,
-                            `false` = contract.falseCriterion
-                        )
-                    )
-                )
-            )
-
-            try {
-                val response = jevApiService.getDecisions(request)
-                if (!response.isSuccessful) {
-                    val code = response.code()
-                    val errorMsg = when (code) {
-                        401 -> "HTTP_401_UNAUTHORIZED"
-                        429 -> "HTTP_429_RATE_LIMIT"
-                        in 500..599 -> "HTTP_SERVER_ERROR_$code"
-                        else -> "HTTP_ERROR_$code"
-                    }
-                    return GateBatchResult(
-                        batchId = batchId,
-                        modelResolved = resolvedModel,
-                        provider = provider,
-                        inputTokens = if (totalInputTokens > 0) totalInputTokens else null,
-                        outputTokens = if (totalOutputTokens > 0) totalOutputTokens else null,
-                        costUsd = if (totalCost > 0.0) totalCost else null,
-                        results = emptyList(),
-                        error = errorMsg
-                    )
-                }
-
-                val body = response.body()
-                if (body == null) {
-                    return GateBatchResult(
-                        batchId = batchId,
-                        modelResolved = resolvedModel,
-                        provider = provider,
-                        inputTokens = null,
-                        outputTokens = null,
-                        costUsd = null,
-                        results = emptyList(),
-                        error = "JEV_NULL_RESPONSE"
-                    )
-                }
-
-                resolvedModel = body.model ?: resolvedModel
-                provider = body.provider ?: provider
-                body.usage?.inputTokens?.let { totalInputTokens += it }
-                body.usage?.outputTokens?.let { totalOutputTokens += it }
-                body.usage?.costUsd?.let { totalCost += it }
-
-                val answers = body.answers
-                if (answers.isNullOrEmpty()) {
-                    return GateBatchResult(
-                        batchId = batchId,
-                        modelResolved = resolvedModel,
-                        provider = provider,
-                        inputTokens = totalInputTokens,
-                        outputTokens = totalOutputTokens,
-                        costUsd = totalCost,
-                        results = emptyList(),
-                        error = "JEV_VALIDATION_ERROR: answers is null or empty"
-                    )
-                }
-
-                if (!answers.containsKey(requestedKey)) {
-                    return GateBatchResult(
-                        batchId = batchId,
-                        modelResolved = resolvedModel,
-                        provider = provider,
-                        inputTokens = totalInputTokens,
-                        outputTokens = totalOutputTokens,
-                        costUsd = totalCost,
-                        results = emptyList(),
-                        error = "JEV_VALIDATION_ERROR: Missing requested answer key: $requestedKey"
-                    )
-                }
-
-                for (key in answers.keys) {
-                    if (key != requestedKey) {
-                        return GateBatchResult(
-                            batchId = batchId,
-                            modelResolved = resolvedModel,
-                            provider = provider,
-                            inputTokens = totalInputTokens,
-                            outputTokens = totalOutputTokens,
-                            costUsd = totalCost,
-                            results = emptyList(),
-                            error = "JEV_VALIDATION_ERROR: Unexpected answer key: $key"
-                        )
+        val outcomes = arrayOfNulls<JevCallOutcome>(batch.size)
+        coroutineScope {
+            val nextIndex = AtomicInteger()
+            repeat(minOf(MAX_CONCURRENT_JEV_REQUESTS, batch.size)) {
+                launch {
+                    while (true) {
+                        val index = nextIndex.getAndIncrement()
+                        if (index >= batch.size) break
+                        outcomes[index] = requestDecision(batch[index], config, requestedKey)
                     }
                 }
-
-                val answerVal = answers[requestedKey]
-                if (answerVal == null) {
-                    return GateBatchResult(
-                        batchId = batchId,
-                        modelResolved = resolvedModel,
-                        provider = provider,
-                        inputTokens = totalInputTokens,
-                        outputTokens = totalOutputTokens,
-                        costUsd = totalCost,
-                        results = emptyList(),
-                        error = "JEV_VALIDATION_ERROR: Answer value is null for key: $requestedKey"
-                    )
-                }
-
-                if (!answerVal.type.equals("noul", ignoreCase = true)) {
-                    return GateBatchResult(
-                        batchId = batchId,
-                        modelResolved = resolvedModel,
-                        provider = provider,
-                        inputTokens = totalInputTokens,
-                        outputTokens = totalOutputTokens,
-                        costUsd = totalCost,
-                        results = emptyList(),
-                        error = "JEV_VALIDATION_ERROR: Wrong answer type (expected noul, got ${answerVal.type})"
-                    )
-                }
-
-                val prob = answerVal.noul
-                if (prob == null || prob.isNaN() || prob.isInfinite() || prob < 0.0 || prob > 1.0) {
-                    return GateBatchResult(
-                        batchId = batchId,
-                        modelResolved = resolvedModel,
-                        provider = provider,
-                        inputTokens = totalInputTokens,
-                        outputTokens = totalOutputTokens,
-                        costUsd = totalCost,
-                        results = emptyList(),
-                        error = "JEV_VALIDATION_ERROR: Invalid probability value: $prob"
-                    )
-                }
-
-                results.add(
-                    GateItemResult(
-                        commentId = input.commentId,
-                        questionKey = requestedKey,
-                        probability = prob,
-                        rawOutput = body.id
-                    )
-                )
-
-            } catch (e: IOException) {
-                return GateBatchResult(
-                    batchId = batchId,
-                    modelResolved = resolvedModel,
-                    provider = provider,
-                    inputTokens = if (totalInputTokens > 0) totalInputTokens else null,
-                    outputTokens = if (totalOutputTokens > 0) totalOutputTokens else null,
-                    costUsd = if (totalCost > 0.0) totalCost else null,
-                    results = emptyList(),
-                    error = "NETWORK_ERROR: ${e.localizedMessage ?: "Unknown network error"}"
-                )
-            } catch (e: Exception) {
-                return GateBatchResult(
-                    batchId = batchId,
-                    modelResolved = resolvedModel,
-                    provider = provider,
-                    inputTokens = if (totalInputTokens > 0) totalInputTokens else null,
-                    outputTokens = if (totalOutputTokens > 0) totalOutputTokens else null,
-                    costUsd = if (totalCost > 0.0) totalCost else null,
-                    results = emptyList(),
-                    error = "EXCEPTION: ${e.localizedMessage ?: "Unknown exception"}"
-                )
             }
         }
+
+        val completed = outcomes.map { requireNotNull(it) }
+        val resolvedModel = completed.lastOrNull { it.modelResolved != null }?.modelResolved
+            ?: config.model
+        val provider = completed.lastOrNull { it.provider != null }?.provider
+        val totalInputTokens = completed.mapNotNull { it.inputTokens }.sum()
+        val totalOutputTokens = completed.mapNotNull { it.outputTokens }.sum()
+        val totalCost = completed.mapNotNull { it.costUsd }.sum()
+        val firstError = completed.firstOrNull { it.error != null }?.error
+        val results = completed.mapNotNull { it.result }
 
         return GateBatchResult(
             batchId = batchId,
             modelResolved = resolvedModel,
             provider = provider,
-            inputTokens = if (totalInputTokens > 0) totalInputTokens else null,
-            outputTokens = if (totalOutputTokens > 0) totalOutputTokens else null,
-            costUsd = if (totalCost > 0.0) totalCost else null,
-            results = results,
-            error = null
+            inputTokens = totalInputTokens.takeIf { it > 0 },
+            outputTokens = totalOutputTokens.takeIf { it > 0 },
+            costUsd = totalCost.takeIf { it > 0.0 },
+            results = if (firstError == null) results else emptyList(),
+            error = firstError
         )
+    }
+
+    private suspend fun requestDecision(
+        input: GateInput,
+        config: GateConfig,
+        requestedKey: String
+    ): JevCallOutcome {
+        val request = JevRequest(
+            model = if (config.model.isNotBlank()) config.model else "typesafe/jev-1.14",
+            state = input.text,
+            questions = mapOf(
+                requestedKey to JevQuestionItem(
+                    type = "noul",
+                    instructions = config.questionContract.instructions,
+                    criteria = JevCriteria(
+                        `true` = config.questionContract.trueCriterion,
+                        `false` = config.questionContract.falseCriterion
+                    )
+                )
+            )
+        )
+
+        try {
+            val response = jevApiService.getDecisions(request)
+            if (!response.isSuccessful) {
+                val code = response.code()
+                val error = when (code) {
+                    401 -> "HTTP_401_UNAUTHORIZED"
+                    429 -> "HTTP_429_RATE_LIMIT"
+                    in 500..599 -> "HTTP_SERVER_ERROR_$code"
+                    else -> "HTTP_ERROR_$code"
+                }
+                return JevCallOutcome(error = error)
+            }
+
+            val body = response.body() ?: return JevCallOutcome(error = "JEV_NULL_RESPONSE")
+            val metadata = JevCallOutcome(
+                modelResolved = body.model,
+                provider = body.provider,
+                inputTokens = body.usage?.inputTokens,
+                outputTokens = body.usage?.outputTokens,
+                costUsd = body.usage?.costUsd
+            )
+            fun validationError(message: String) = metadata.copy(error = "JEV_VALIDATION_ERROR: $message")
+
+            val answers = body.answers
+                ?: return validationError("answers is null or empty")
+            if (answers.isEmpty()) return validationError("answers is null or empty")
+            if (!answers.containsKey(requestedKey)) {
+                return validationError("Missing requested answer key: $requestedKey")
+            }
+            if (answers.keys.any { it != requestedKey }) {
+                val unexpectedKey = answers.keys.first { it != requestedKey }
+                return validationError("Unexpected answer key: $unexpectedKey")
+            }
+            val answer = answers[requestedKey]
+                ?: return validationError("Answer value is null for key: $requestedKey")
+            if (!answer.type.equals("noul", ignoreCase = true)) {
+                return validationError("Wrong answer type (expected noul, got ${answer.type})")
+            }
+            val probability = answer.noul
+            if (probability == null || !probability.isFinite() || probability !in 0.0..1.0) {
+                return validationError("Invalid probability value: $probability")
+            }
+            return metadata.copy(
+                result = GateItemResult(
+                    commentId = input.commentId,
+                    questionKey = requestedKey,
+                    probability = probability,
+                    rawOutput = body.id
+                )
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: IOException) {
+            return JevCallOutcome(error = "NETWORK_ERROR: ${failure.localizedMessage ?: "Unknown network error"}")
+        } catch (failure: Exception) {
+            return JevCallOutcome(error = "EXCEPTION: ${failure.localizedMessage ?: "Unknown exception"}")
+        }
+    }
+
+    private data class JevCallOutcome(
+        val result: GateItemResult? = null,
+        val modelResolved: String? = null,
+        val provider: String? = null,
+        val inputTokens: Long? = null,
+        val outputTokens: Long? = null,
+        val costUsd: Double? = null,
+        val error: String? = null
+    )
+
+    companion object {
+        const val MAX_CONCURRENT_JEV_REQUESTS = 4
     }
 }

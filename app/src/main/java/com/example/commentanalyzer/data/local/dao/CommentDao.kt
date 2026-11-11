@@ -18,7 +18,8 @@ data class AnalysisProcessingCounts(
     @ColumnInfo(name = "jevRejected") val jevRejected: Long,
     @ColumnInfo(name = "completed") val completed: Long,
     @ColumnInfo(name = "retrying") val retrying: Long,
-    @ColumnInfo(name = "permanentlyFailed") val permanentlyFailed: Long
+    @ColumnInfo(name = "permanentlyFailed") val permanentlyFailed: Long,
+    @ColumnInfo(name = "inProgress") val inProgress: Long
 )
 
 data class AnalysisDistributionCount(
@@ -93,7 +94,8 @@ interface CommentDao {
                     AND r.stage = 'GLM_ANALYSIS'
             ) THEN 1 ELSE 0 END), 0) AS completed,
             COALESCE(SUM(CASE WHEN c.processingState = 'RETRY_WAIT' THEN 1 ELSE 0 END), 0) AS retrying,
-            COALESCE(SUM(CASE WHEN c.processingState = 'FAILED_PERMANENT' THEN 1 ELSE 0 END), 0) AS permanentlyFailed
+            COALESCE(SUM(CASE WHEN c.processingState = 'FAILED_PERMANENT' THEN 1 ELSE 0 END), 0) AS permanentlyFailed,
+            COALESCE(SUM(CASE WHEN c.processingState IN ('JEV_IN_PROGRESS', 'GLM_IN_PROGRESS') THEN 1 ELSE 0 END), 0) AS inProgress
         FROM comments c
         WHERE c.importId = :importId
             AND c.processingConfigVersion = :configVersion

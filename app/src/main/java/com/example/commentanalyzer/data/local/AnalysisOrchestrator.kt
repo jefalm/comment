@@ -302,6 +302,7 @@ class AnalysisOrchestrator(
         val batch = requireNotNull(database.processingBatchDao().getBatchById(batchId))
         val statusCode = when {
             errorCode == "NETWORK_ERROR" -> 503
+            errorCode == "GLM_OUTPUT_TRUNCATED" -> 503
             errorCode == "HTTP_429_RATE_LIMIT" -> 429
             errorCode == "HTTP_401_UNAUTHORIZED" -> 401
             errorCode.startsWith("HTTP_SERVER_ERROR_") ->

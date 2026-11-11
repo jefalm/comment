@@ -53,6 +53,26 @@ interface ProcessingBatchDao {
 
     @Query(
         """
+        SELECT EXISTS(
+            SELECT 1 FROM processing_batches
+            WHERE importId = :importId
+                AND processingConfigVersion = :configVersion
+                AND stage IN ('JEV_GATE', 'GLM_ANALYSIS')
+                AND (
+                    status = 'RETRY_WAIT'
+                    OR (status = 'IN_FLIGHT' AND (leaseExpiresAt IS NULL OR leaseExpiresAt > :now))
+                )
+        )
+        """
+    )
+    suspend fun hasPendingAnalysisBatches(
+        importId: String,
+        configVersion: Long,
+        now: Long
+    ): Boolean
+
+    @Query(
+        """
         SELECT SUM(inputTokens) AS inputTokens,
             SUM(outputTokens) AS outputTokens,
             SUM(costUsd) AS costUsd

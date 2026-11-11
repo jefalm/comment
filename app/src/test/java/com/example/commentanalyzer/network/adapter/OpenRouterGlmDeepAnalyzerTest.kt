@@ -1,5 +1,6 @@
 package com.example.commentanalyzer.network.adapter
 
+import com.example.commentanalyzer.domain.batching.BatchPlanner
 import com.example.commentanalyzer.domain.model.AnalysisConfig
 import com.example.commentanalyzer.domain.model.AnalysisInput
 import com.example.commentanalyzer.network.glm.GlmApiService
@@ -54,8 +55,45 @@ class OpenRouterGlmDeepAnalyzerTest {
         assertTrue(schemaEnvelope.get("strict").asBoolean)
         assertFalse(schemaEnvelope.getAsJsonObject("schema").get("additionalProperties").asBoolean)
         assertTrue(sent.getAsJsonObject("provider").get("require_parameters").asBoolean)
+        assertEquals(
+            "response-healing",
+            sent.getAsJsonArray("plugins").get(0).asJsonObject.get("id").asString
+        )
         assertEquals("low", sent.getAsJsonObject("reasoning").get("effort").asString)
         assertTrue(sent.getAsJsonObject("reasoning").get("exclude").asBoolean)
+    }
+
+    @Test
+    fun fiftyFourCommentsArePlannedAsTwentyTwentyAndFourteen() {
+        val items = (1..54).map { index ->
+            BatchPlanner.Item("comment-%02d".format(index), "Short text")
+        }
+
+        val batches = BatchPlanner.planBatches(items, BatchPlanner.GLM_LIMITS)
+
+        assertEquals(listOf(20, 20, 14), batches.map { it.size })
+    }
+
+    @Test
+    fun responseHealingDoesNotBypassStrictSchemaOrExactIdValidation() = runBlocking {
+        server.enqueue(response(results("c1", "other")))
+        assertRejected(analyzer().analyze(inputs(), config()), "GLM_RESULT_ID_SET_MISMATCH")
+
+        server.enqueue(response("""{"schemaVersion":1,"results":[]}"""))
+        assertRejected(analyzer().analyze(inputs(), config()), "GLM_RESULT_ID_SET_MISMATCH")
+
+        server.enqueue(response("""{"schemaVersion":1,"results":[],"extra":true}"""))
+        assertRejected(analyzer().analyze(inputs(), config()), "GLM_SCHEMA_MISMATCH")
+    }
+
+    @Test
+    fun lengthFinishReasonFailsAsTruncatedWithoutPartialResults() = runBlocking {
+        server.enqueue(response(results("c1", "c2"), finishReason = "length"))
+
+        val result = analyzer().analyze(inputs(), config())
+
+        assertEquals("GLM_OUTPUT_TRUNCATED", result.error)
+        assertTrue(result.results.isEmpty())
     }
 
     @Test
@@ -158,10 +196,10 @@ class OpenRouterGlmDeepAnalyzerTest {
 
     private fun config() = AnalysisConfig(1L, "z-ai/glm-5.3-flash")
 
-    private fun response(content: String?) = MockResponse()
+    private fun response(content: String?, finishReason: String = "stop") = MockResponse()
         .setResponseCode(200)
         .setBody(
-            """{"id":"gen-123","model":"z-ai/glm-5.3-flash:free","provider":"test-provider","usage":{"input_tokens":11,"output_tokens":7,"cost":0.001},"choices":[{"message":{"content":${content?.let(gson::toJson) ?: "null"}}}]}"""
+            """{"id":"gen-123","model":"z-ai/glm-5.3-flash:free","provider":"test-provider","usage":{"input_tokens":11,"output_tokens":7,"cost":0.001},"choices":[{"finish_reason":${gson.toJson(finishReason)},"message":{"content":${content?.let(gson::toJson) ?: "null"}}}]}"""
         )
 
     private fun results(

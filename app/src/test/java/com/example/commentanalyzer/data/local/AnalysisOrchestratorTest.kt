@@ -20,6 +20,7 @@ import com.example.commentanalyzer.domain.model.GateInput
 import com.example.commentanalyzer.domain.model.GateItemResult
 import com.example.commentanalyzer.domain.model.SourceType
 import com.example.commentanalyzer.domain.retry.RetryPolicy
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -45,6 +46,7 @@ class AnalysisOrchestratorTest {
     private var glmError: String? = null
     private var probability = 0.9
     private var partialGlmResponse = false
+    private var cancelGlmOnce = false
 
     private val gate = object : SemanticGate {
         override suspend fun screen(batch: List<GateInput>, config: GateConfig): GateBatchResult {
@@ -72,6 +74,10 @@ class AnalysisOrchestratorTest {
         ): AnalysisBatchResult {
             events += "glm"
             glmCalls++
+            if (cancelGlmOnce) {
+                cancelGlmOnce = false
+                throw CancellationException("Simulated worker cancellation")
+            }
             val results = batch.map {
                 AnalysisItemResult(it.commentId, "feedback", "positive", 0.9, "Helpful feedback")
             }.let { if (partialGlmResponse) it.take(1) else it }
@@ -173,6 +179,31 @@ class AnalysisOrchestratorTest {
     }
 
     @Test
+    fun cancellationAndRestartPreserveSuccessfulResultsWithoutDuplicates() = runBlocking {
+        addComment(comment("restart"))
+        cancelGlmOnce = true
+        val orchestrator = orchestrator()
+
+        try {
+            orchestrator.run(IMPORT_ID, config())
+            throw AssertionError("Expected the simulated worker cancellation")
+        } catch (_: CancellationException) {
+            Unit
+        }
+        assertEquals(1, resultsFor("restart", ResultStage.JEV_GATE).size)
+        assertTrue(resultsFor("restart", ResultStage.GLM_ANALYSIS).isEmpty())
+
+        now += 1
+        orchestrator.run(IMPORT_ID, config())
+
+        assertEquals(1, gateCalls)
+        assertEquals(2, glmCalls)
+        assertEquals(ProcessingState.COMPLETED, database.commentDao().getCommentById("restart")?.processingState)
+        assertEquals(1, resultsFor("restart", ResultStage.JEV_GATE).size)
+        assertEquals(1, resultsFor("restart", ResultStage.GLM_ANALYSIS).size)
+    }
+
+    @Test
     fun failedValidatedGlmBatchDoesNotPersistPartialResults() = runBlocking {
         addComment(comment("partial"))
         glmError = "GLM_RESULT_ID_SET_MISMATCH"
@@ -218,6 +249,20 @@ class AnalysisOrchestratorTest {
         assertEquals(now + expectedDelay, saved.nextAttemptAt)
         assertEquals("HTTP_429_RATE_LIMIT", saved.lastErrorCode)
         assertTrue(resultsFor("retry", ResultStage.JEV_GATE).isEmpty())
+    }
+
+    @Test
+    fun glmOutputTruncationIsRetriedWithoutPersistingPartialResults() = runBlocking {
+        addComment(comment("truncated"))
+        glmError = "GLM_OUTPUT_TRUNCATED"
+
+        orchestrator().run(IMPORT_ID, config())
+
+        val saved = requireNotNull(database.commentDao().getCommentById("truncated"))
+        assertEquals(ProcessingState.RETRY_WAIT, saved.processingState)
+        assertEquals("GLM_OUTPUT_TRUNCATED", saved.lastErrorCode)
+        assertEquals(2, database.analysisResultDao().getResultsForComment("truncated", CONFIG_VERSION).size)
+        assertTrue(resultsFor("truncated", ResultStage.GLM_ANALYSIS).isEmpty())
     }
 
     @Test
@@ -283,6 +328,7 @@ class AnalysisOrchestratorTest {
         glmError = null
         probability = 0.9
         partialGlmResponse = false
+        cancelGlmOnce = false
     }
 
     private fun config() = ProcessingConfigEntity(
