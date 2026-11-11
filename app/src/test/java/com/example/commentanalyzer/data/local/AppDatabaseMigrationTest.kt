@@ -90,4 +90,73 @@ class AppDatabaseMigrationTest {
             context.deleteDatabase("analysis-migration-test.db")
         }
     }
+
+    @Test
+    fun migrationThreeToFourAddsJevConfidenceColumnsWithoutDroppingRows() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name("analysis-migration-3-4-test.db")
+                .callback(
+                    object : SupportSQLiteOpenHelper.Callback(3) {
+                        override fun onCreate(database: SupportSQLiteDatabase) {
+                            database.execSQL(
+                                "CREATE TABLE comments (" +
+                                    "localId TEXT NOT NULL PRIMARY KEY, category TEXT, sentiment TEXT)"
+                            )
+                            database.execSQL(
+                                "CREATE TABLE analysis_results (" +
+                                    "resultId TEXT NOT NULL PRIMARY KEY, commentId TEXT NOT NULL, " +
+                                    "category TEXT, sentiment TEXT)"
+                            )
+                            database.execSQL(
+                                "INSERT INTO comments(localId, category, sentiment) " +
+                                    "VALUES('comment-1', 'praise', 'positive')"
+                            )
+                            database.execSQL(
+                                "INSERT INTO analysis_results(resultId, commentId, category, sentiment) " +
+                                    "VALUES('res-1', 'comment-1', 'praise', 'positive')"
+                            )
+                        }
+
+                        override fun onUpgrade(
+                            database: SupportSQLiteDatabase,
+                            oldVersion: Int,
+                            newVersion: Int
+                        ) = Unit
+                    }
+                )
+                .build()
+        )
+
+        val database = helper.writableDatabase
+        try {
+            AppDatabase.MIGRATION_3_4.migrate(database)
+
+            database.query(
+                "SELECT localId, category, sentiment, categoryConfidence, sentimentConfidence FROM comments"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("comment-1", cursor.getString(0))
+                assertEquals("praise", cursor.getString(1))
+                assertEquals("positive", cursor.getString(2))
+                assertTrue(cursor.isNull(3))
+                assertTrue(cursor.isNull(4))
+            }
+            database.query(
+                "SELECT resultId, commentId, category, sentiment, categoryConfidence, sentimentConfidence FROM analysis_results"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("res-1", cursor.getString(0))
+                assertEquals("comment-1", cursor.getString(1))
+                assertEquals("praise", cursor.getString(2))
+                assertEquals("positive", cursor.getString(3))
+                assertTrue(cursor.isNull(4))
+                assertTrue(cursor.isNull(5))
+            }
+        } finally {
+            helper.close()
+            context.deleteDatabase("analysis-migration-3-4-test.db")
+        }
+    }
 }

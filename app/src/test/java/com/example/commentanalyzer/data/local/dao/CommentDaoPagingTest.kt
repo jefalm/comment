@@ -53,17 +53,78 @@ class CommentDaoPagingTest {
             )
         )
 
-        val all = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL))
+        val all = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 0, 0, 0, 0))
         assertEquals(listOf("reply-new", "top-new", "top-old"), all.map(CommentEntity::localId))
 
-        val search = load(dao.pagingComments("import-a", "nEeDlE", RELATIONSHIP_ALL))
+        val search = load(dao.pagingComments("import-a", "nEeDlE", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 0, 0, 0, 0))
         assertEquals(listOf("reply-new", "top-old"), search.map(CommentEntity::localId))
 
-        val topLevel = load(dao.pagingComments("import-a", "", RELATIONSHIP_TOP_LEVEL))
+        val topLevel = load(dao.pagingComments("import-a", "", RELATIONSHIP_TOP_LEVEL, emptyList(), 0, emptyList(), 0, 0, 0, 0, 0))
         assertEquals(listOf("top-new", "top-old"), topLevel.map(CommentEntity::localId))
 
-        val replies = load(dao.pagingComments("import-a", "", RELATIONSHIP_REPLIES))
+        val replies = load(dao.pagingComments("import-a", "", RELATIONSHIP_REPLIES, emptyList(), 0, emptyList(), 0, 0, 0, 0, 0))
         assertEquals(listOf("reply-new"), replies.map(CommentEntity::localId))
+    }
+
+    @Test
+    fun threadsViewAdjacencyAndChronologicalRepliesAndOrphans() = runBlocking {
+        dao.insertComments(
+            listOf(
+                comment("root-1", "import-a", "Root 1", 100L),
+                comment("reply-1-b", "import-a", "Reply 1b", 120L, "source-root-1"),
+                comment("reply-1-a", "import-a", "Reply 1a", 110L, "source-root-1"),
+                comment("orphan-reply", "import-a", "Orphan", 90L, "source-missing-root")
+            )
+        )
+
+        val threads = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 0, 0, 1, 0))
+        assertEquals(listOf("root-1", "reply-1-a", "reply-1-b", "orphan-reply"), threads.map(CommentEntity::localId))
+    }
+
+    @Test
+    fun categoryGroupingAndGroupSizeOrdering() = runBlocking {
+        val c1 = comment("c1", "import-a", "Cat 1 A", 100L).copy(category = "feedback")
+        val c2 = comment("c2", "import-a", "Cat 1 B", 110L).copy(category = "feedback")
+        val c3 = comment("c3", "import-a", "Cat 2 A", 120L).copy(category = "criticism")
+        dao.insertComments(listOf(c1, c2, c3))
+
+        val categories = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 0, 0, 2, 4))
+        assertEquals(listOf("c2", "c1", "c3"), categories.map(CommentEntity::localId))
+    }
+
+    @Test
+    fun multiSelectFiltersAndCrossDimensionAnd() = runBlocking {
+        val c1 = comment("c1", "import-a", "Crit Neg", 100L).copy(category = "criticism", sentiment = "negative")
+        val c2 = comment("c2", "import-a", "Q Neutral", 110L).copy(category = "question", sentiment = "neutral")
+        val c3 = comment("c3", "import-a", "Crit Pos", 120L).copy(category = "criticism", sentiment = "positive")
+        dao.insertComments(listOf(c1, c2, c3))
+
+        val filtered = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, listOf("criticism", "question"), 1, listOf("negative", "neutral"), 1, 0, 0, 0, 0))
+        assertEquals(listOf("c2", "c1"), filtered.map(CommentEntity::localId))
+    }
+
+    @Test
+    fun processingStateFilterAndHasReplies() = runBlocking {
+        val c1 = comment("c1", "import-a", "Unclassified", 100L).copy(category = null, sentiment = null)
+        val c2 = comment("c2", "import-a", "Retrying", 110L, parentId = null).copy(processingState = ProcessingState.RETRY_WAIT, declaredReplyCount = 2)
+        dao.insertComments(listOf(c1, c2))
+
+        val retrying = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 3, 0, 0, 0))
+        assertEquals(listOf("c2"), retrying.map(CommentEntity::localId))
+
+        val withReplies = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 0, 1, 0, 0))
+        assertEquals(listOf("c2"), withReplies.map(CommentEntity::localId))
+    }
+
+    @Test
+    fun needsAttentionDeterministicTuple() = runBlocking {
+        val cCrit = comment("crit", "import-a", "Criticism", 100L).copy(category = "criticism")
+        val cFeed = comment("feed", "import-a", "Feedback", 110L).copy(category = "feedback")
+        val cQuest = comment("quest", "import-a", "Question", 120L).copy(category = "question")
+        dao.insertComments(listOf(cCrit, cFeed, cQuest))
+
+        val sorted = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 0, 0, 0, 3))
+        assertEquals(listOf("crit", "feed", "quest"), sorted.map(CommentEntity::localId))
     }
 
     @Test

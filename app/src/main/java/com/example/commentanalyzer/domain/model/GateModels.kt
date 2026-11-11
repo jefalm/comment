@@ -26,7 +26,11 @@ data class GateItemResult(
     val commentId: String,
     val questionKey: String,
     val probability: Double,
-    val rawOutput: String?
+    val rawOutput: String?,
+    val category: String? = null,
+    val categoryConfidence: Double? = null,
+    val sentiment: String? = null,
+    val sentimentConfidence: Double? = null
 )
 
 data class GateBatchResult(

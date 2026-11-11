@@ -42,5 +42,7 @@ data class AnalysisResultEntity(
     val rawPayloadJson: String?,
     val createdAt: Long,
     val batchId: String? = null,
-    val confidence: Double? = null
+    val confidence: Double? = null,
+    val categoryConfidence: Double? = null,
+    val sentimentConfidence: Double? = null
 )

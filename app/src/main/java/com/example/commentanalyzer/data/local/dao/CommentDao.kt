@@ -1,4 +1,4 @@
-package com.example.commentanalyzer.data.local.dao
+﻿package com.example.commentanalyzer.data.local.dao
 
 import androidx.room.Dao
 import androidx.room.Insert
@@ -166,24 +166,99 @@ interface CommentDao {
     @Update
     suspend fun updateComments(comments: List<CommentEntity>): Int
 
-        @Query(
-                """
-                SELECT * FROM comments
-                WHERE importId = :importId
-                    AND (:query = '' OR originalText LIKE '%' || :query || '%' COLLATE NOCASE)
-                    AND (
-                        :relationship = -1
-                        OR (:relationship = 0 AND parentSourceCommentId IS NULL)
-                        OR (:relationship = 1 AND parentSourceCommentId IS NOT NULL)
-                    )
-                ORDER BY publishedAtEpochMillis DESC, localId ASC
-                """
-        )
-        fun pagingComments(
-                importId: String,
-                query: String,
-                relationship: Int
-        ): PagingSource<Int, CommentEntity>
+    @Query(
+        """
+        SELECT * FROM comments
+        WHERE importId = :importId
+            AND (:query = '' OR originalText LIKE '%' || :query || '%' COLLATE NOCASE)
+            AND (
+                :relationship = -1
+                OR (:relationship = 0 AND parentSourceCommentId IS NULL)
+                OR (:relationship = 1 AND parentSourceCommentId IS NOT NULL)
+            )
+            AND (:hasCategories = 0 OR category IN (:categories))
+            AND (:hasSentiments = 0 OR sentiment IN (:sentiments))
+            AND (
+                :stateFilter = 0
+                OR (:stateFilter = 1 AND (category IS NULL OR sentiment IS NULL))
+                OR (:stateFilter = 2 AND processingState IN ('MANUAL_REVIEW', 'LOCAL_REJECTED', 'JEV_REJECTED'))
+                OR (:stateFilter = 3 AND processingState = 'RETRY_WAIT')
+                OR (:stateFilter = 4 AND processingState = 'FAILED_PERMANENT')
+            )
+            AND (:hasRepliesOnly = 0 OR COALESCE(declaredReplyCount, 0) > 0 OR EXISTS (SELECT 1 FROM comments r WHERE r.parentSourceCommentId = comments.sourceCommentId))
+        ORDER BY
+            -- Threads view ordering: root comments first by sort, then their replies chronologically
+            CASE
+                WHEN :viewMode = 1 THEN
+                    CASE WHEN parentSourceCommentId IS NULL THEN publishedAtEpochMillis ELSE (SELECT p.publishedAtEpochMillis FROM comments p WHERE p.sourceCommentId = comments.parentSourceCommentId) END
+                ELSE 0
+            END DESC,
+            CASE
+                WHEN :viewMode = 1 THEN
+                    CASE WHEN parentSourceCommentId IS NULL THEN localId ELSE (SELECT p.localId FROM comments p WHERE p.sourceCommentId = comments.parentSourceCommentId) END
+                ELSE ''
+            END ASC,
+            CASE
+                WHEN :viewMode = 1 THEN
+                    CASE WHEN parentSourceCommentId IS NULL THEN 0 ELSE 1 END
+                ELSE 0
+            END ASC,
+            CASE
+                WHEN :viewMode = 1 THEN
+                    publishedAtEpochMillis
+                ELSE 0
+            END ASC,
+
+            -- Categories view ordering: group by category group size descending, then category name
+            CASE WHEN :viewMode = 2 AND :sort = 4 THEN (SELECT COUNT(*) FROM comments c2 WHERE c2.importId = :importId AND COALESCE(c2.category, 'Unclassified') = COALESCE(comments.category, 'Unclassified')) END DESC,
+            CASE WHEN :viewMode = 2 THEN COALESCE(category, 'Unclassified') END ASC,
+
+            -- Standard sorts
+            CASE WHEN :sort = 0 THEN publishedAtEpochMillis END DESC,
+            CASE WHEN :sort = 1 THEN publishedAtEpochMillis END ASC,
+            CASE WHEN :sort = 2 THEN COALESCE(declaredReplyCount, 0) END DESC,
+            CASE WHEN :sort = 2 THEN COALESCE(likeCount, 0) END DESC,
+            CASE WHEN :sort = 2 THEN publishedAtEpochMillis END DESC,
+            CASE WHEN :sort = 3 THEN
+                CASE category
+                    WHEN 'criticism' THEN 1
+                    WHEN 'feedback' THEN 2
+                    WHEN 'question' THEN 3
+                    WHEN 'negative sentiment' THEN 4
+                    WHEN 'reply count descending' THEN 5
+                    WHEN 'like count descending' THEN 6
+                    WHEN 'published timestamp descending' THEN 7
+                    ELSE 8
+                END
+            END ASC,
+            CASE WHEN :sort = 3 THEN
+                CASE sentiment
+                    WHEN 'negative' THEN 1
+                    WHEN 'neutral' THEN 2
+                    WHEN 'positive' THEN 3
+                    ELSE 4
+                END
+            END ASC,
+            CASE WHEN :sort = 3 THEN COALESCE(declaredReplyCount, 0) END DESC,
+            CASE WHEN :sort = 3 THEN COALESCE(likeCount, 0) END DESC,
+            CASE WHEN :sort = 3 THEN publishedAtEpochMillis END DESC,
+            publishedAtEpochMillis DESC,
+            localId ASC
+        """
+    )
+    fun pagingComments(
+        importId: String,
+        query: String,
+        relationship: Int,
+        categories: List<String>,
+        hasCategories: Int,
+        sentiments: List<String>,
+        hasSentiments: Int,
+        stateFilter: Int,
+        hasRepliesOnly: Int,
+        viewMode: Int,
+        sort: Int
+    ): PagingSource<Int, CommentEntity>
 
     @Query("UPDATE comments SET processingState = :newState, currentStage = :newStage, updatedAt = :updatedAt WHERE localId = :localId AND processingState = :expectedState")
     suspend fun updateStateCas(localId: String, expectedState: ProcessingState, newState: ProcessingState, newStage: ProcessingStage, updatedAt: Long): Int

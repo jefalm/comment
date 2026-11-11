@@ -21,7 +21,7 @@ import com.example.commentanalyzer.data.local.entity.*
         ProcessingConfigEntity::class,
         RetryScheduleEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -80,10 +80,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE comments ADD COLUMN categoryConfidence REAL")
+                database.execSQL("ALTER TABLE comments ADD COLUMN sentimentConfidence REAL")
+                database.execSQL("ALTER TABLE analysis_results ADD COLUMN categoryConfidence REAL")
+                database.execSQL("ALTER TABLE analysis_results ADD COLUMN sentimentConfidence REAL")
+            }
+        }
+
         fun create(context: Context): AppDatabase = Room.databaseBuilder(
             context.applicationContext,
             AppDatabase::class.java,
             "comment-analyzer.db"
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
     }
 }

@@ -52,5 +52,7 @@ data class CommentEntity(
     val declaredReplyCount: Int? = null,
     val sourcePublishedAtRaw: String? = null,
     val sourceUpdatedAtRaw: String? = null,
-    val publishedAtLocalDateTimeRaw: String? = null
+    val publishedAtLocalDateTimeRaw: String? = null,
+    val categoryConfidence: Double? = null,
+    val sentimentConfidence: Double? = null
 )

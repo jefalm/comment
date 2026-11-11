@@ -60,7 +60,16 @@ class AnalysisOrchestratorTest {
                 outputTokens = 2,
                 costUsd = 0.0,
                 results = batch.map {
-                    GateItemResult(it.commentId, config.questionContract.questionKey, probability, null)
+                    GateItemResult(
+                        commentId = it.commentId,
+                        questionKey = config.questionContract.questionKey,
+                        probability = probability,
+                        rawOutput = null,
+                        category = "feedback",
+                        categoryConfidence = 0.9,
+                        sentiment = "positive",
+                        sentimentConfidence = 0.9
+                    )
                 },
                 error = gateError
             )

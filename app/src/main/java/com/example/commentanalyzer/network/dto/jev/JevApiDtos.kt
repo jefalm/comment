@@ -9,7 +9,7 @@ data class JevRequest(
 data class JevQuestionItem(
     val type: String = "noul",
     val instructions: String,
-    val criteria: JevCriteria
+    val criteria: Any
 )
 
 data class JevCriteria(
@@ -27,7 +27,10 @@ data class JevDecisionResponse(
 
 data class JevAnswerValue(
     val type: String?,
-    val noul: Double?
+    val noul: Double? = null,
+    val choice: String? = null,
+    val confidence: Double? = null,
+    val probabilities: Map<String, Double>? = null
 )
 
 data class JevUsage(

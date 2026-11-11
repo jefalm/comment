@@ -19,10 +19,30 @@ class CommentsRepository(
     fun pagingComments(
         importId: String,
         query: String,
-        relationship: Int
+        relationship: Int,
+        categories: List<String>,
+        sentiments: List<String>,
+        stateFilter: Int,
+        hasRepliesOnly: Boolean,
+        viewMode: Int,
+        sort: Int
     ): Flow<PagingData<CommentEntity>> = Pager(
         config = PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false),
-        pagingSourceFactory = { commentDao.pagingComments(importId, query, relationship) }
+        pagingSourceFactory = {
+            commentDao.pagingComments(
+                importId = importId,
+                query = query,
+                relationship = relationship,
+                categories = categories,
+                hasCategories = if (categories.isEmpty()) 0 else 1,
+                sentiments = sentiments,
+                hasSentiments = if (sentiments.isEmpty()) 0 else 1,
+                stateFilter = stateFilter,
+                hasRepliesOnly = if (hasRepliesOnly) 1 else 0,
+                viewMode = viewMode,
+                sort = sort
+            )
+        }
     ).flow
 
     private companion object {

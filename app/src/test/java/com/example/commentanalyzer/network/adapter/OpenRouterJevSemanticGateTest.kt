@@ -225,4 +225,146 @@ class OpenRouterJevSemanticGateTest {
 
         assertEquals("OPENROUTER_KEY_MISSING", result.error)
     }
+
+    @Test
+    fun testV2ValidNoulAndChoicesInOneRequest() = runBlocking {
+        val responseBody = JevDecisionResponse(
+            id = "gen-v2-1",
+            model = "typesafe/jev-1.14",
+            provider = "test-provider",
+            usage = JevUsage(15L, 8L, 0.0002),
+            answers = mapOf(
+                "comment_quality_gate" to JevAnswerValue(type = "noul", noul = 0.9),
+                "comment_category" to JevAnswerValue(type = "choice", choice = "feedback", confidence = 0.85),
+                "comment_sentiment" to JevAnswerValue(type = "choice", choice = "positive", confidence = 0.92)
+            )
+        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody(gson.toJson(responseBody)))
+
+        val gate = createGate()
+        val inputs = listOf(GateInput("c1", "Awesome video, keep doing these tutorials!", null, null))
+        val config = GateConfig(2L, "typesafe/jev-1.14", 0.3, 0.7)
+
+        val result = gate.screen(inputs, config)
+
+        assertNull(result.error)
+        assertEquals(1, result.results.size)
+        val item = result.results[0]
+        assertEquals("c1", item.commentId)
+        assertEquals("comment_quality_gate", item.questionKey)
+        assertEquals(0.9, item.probability, 0.0001)
+        assertEquals("feedback", item.category)
+        assertEquals(0.85, item.categoryConfidence!!, 0.0001)
+        assertEquals("positive", item.sentiment)
+        assertEquals(0.92, item.sentimentConfidence!!, 0.0001)
+
+        val recorded = server.takeRequest()
+        val requestJson = recorded.body.readUtf8()
+        assertTrue(requestJson.contains("comment_quality_gate"))
+        assertTrue(requestJson.contains("comment_category"))
+        assertTrue(requestJson.contains("comment_sentiment"))
+    }
+
+    @Test
+    fun testV2InvalidCategoryFailsClosed() = runBlocking {
+        val responseBody = JevDecisionResponse(
+            id = "gen-v2-2",
+            model = "typesafe/jev-1.14",
+            provider = "test-provider",
+            usage = null,
+            answers = mapOf(
+                "comment_quality_gate" to JevAnswerValue(type = "noul", noul = 0.9),
+                "comment_category" to JevAnswerValue(type = "choice", choice = "unsupported_cat", confidence = 0.85),
+                "comment_sentiment" to JevAnswerValue(type = "choice", choice = "positive", confidence = 0.92)
+            )
+        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody(gson.toJson(responseBody)))
+
+        val gate = createGate()
+        val inputs = listOf(GateInput("c1", "Awesome video!", null, null))
+        val config = GateConfig(2L, "typesafe/jev-1.14", 0.3, 0.7)
+
+        val result = gate.screen(inputs, config)
+
+        assertNotNull(result.error)
+        assertTrue(result.error!!.contains("Invalid category value"))
+        assertTrue(result.results.isEmpty())
+    }
+
+    @Test
+    fun testV2InvalidSentimentFailsClosed() = runBlocking {
+        val responseBody = JevDecisionResponse(
+            id = "gen-v2-3",
+            model = "typesafe/jev-1.14",
+            provider = "test-provider",
+            usage = null,
+            answers = mapOf(
+                "comment_quality_gate" to JevAnswerValue(type = "noul", noul = 0.9),
+                "comment_category" to JevAnswerValue(type = "choice", choice = "praise", confidence = 0.85),
+                "comment_sentiment" to JevAnswerValue(type = "choice", choice = "mixed", confidence = 0.92)
+            )
+        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody(gson.toJson(responseBody)))
+
+        val gate = createGate()
+        val inputs = listOf(GateInput("c1", "Awesome video!", null, null))
+        val config = GateConfig(2L, "typesafe/jev-1.14", 0.3, 0.7)
+
+        val result = gate.screen(inputs, config)
+
+        assertNotNull(result.error)
+        assertTrue(result.error!!.contains("Invalid sentiment value"))
+        assertTrue(result.results.isEmpty())
+    }
+
+    @Test
+    fun testV2MissingRequiredAnswerFailsClosed() = runBlocking {
+        val responseBody = JevDecisionResponse(
+            id = "gen-v2-4",
+            model = "typesafe/jev-1.14",
+            provider = "test-provider",
+            usage = null,
+            answers = mapOf(
+                "comment_quality_gate" to JevAnswerValue(type = "noul", noul = 0.9),
+                "comment_category" to JevAnswerValue(type = "choice", choice = "praise", confidence = 0.85)
+            )
+        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody(gson.toJson(responseBody)))
+
+        val gate = createGate()
+        val inputs = listOf(GateInput("c1", "Awesome video!", null, null))
+        val config = GateConfig(2L, "typesafe/jev-1.14", 0.3, 0.7)
+
+        val result = gate.screen(inputs, config)
+
+        assertNotNull(result.error)
+        assertTrue(result.error!!.contains("Answers keys"))
+        assertTrue(result.results.isEmpty())
+    }
+
+    @Test
+    fun testV2InvalidConfidenceFailsClosed() = runBlocking {
+        val responseBody = JevDecisionResponse(
+            id = "gen-v2-5",
+            model = "typesafe/jev-1.14",
+            provider = "test-provider",
+            usage = null,
+            answers = mapOf(
+                "comment_quality_gate" to JevAnswerValue(type = "noul", noul = 0.9),
+                "comment_category" to JevAnswerValue(type = "choice", choice = "praise", confidence = 1.5),
+                "comment_sentiment" to JevAnswerValue(type = "choice", choice = "positive", confidence = 0.9)
+            )
+        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody(gson.toJson(responseBody)))
+
+        val gate = createGate()
+        val inputs = listOf(GateInput("c1", "Awesome video!", null, null))
+        val config = GateConfig(2L, "typesafe/jev-1.14", 0.3, 0.7)
+
+        val result = gate.screen(inputs, config)
+
+        assertNotNull(result.error)
+        assertTrue(result.error!!.contains("Invalid category confidence"))
+        assertTrue(result.results.isEmpty())
+    }
 }

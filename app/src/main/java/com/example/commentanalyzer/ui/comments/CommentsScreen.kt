@@ -1,28 +1,12 @@
-package com.example.commentanalyzer.ui.comments
+﻿package com.example.commentanalyzer.ui.comments
 
 import androidx.compose.foundation.layout.*
-
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Card
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -72,6 +56,23 @@ fun CommentsScreen(viewModel: CommentsViewModel, modifier: Modifier = Modifier) 
                     }
                 }
             )
+
+            // View modes and sorts & clear filter controls
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ViewModeChip(state, viewModel, CommentViewMode.ALL, "All")
+                ViewModeChip(state, viewModel, CommentViewMode.THREADS, "Threads")
+                ViewModeChip(state, viewModel, CommentViewMode.CATEGORIES, "Categories")
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SortModeDropdown(state, viewModel)
+                if (state.activeFilterCount > 0) {
+                    OutlinedButton(onClick = viewModel::clearAllFilters) {
+                        Text("Clear All (${state.activeFilterCount})")
+                    }
+                }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 RelationshipFilterChip(state, viewModel, CommentRelationshipFilter.ALL, R.string.comments_filter_all)
                 RelationshipFilterChip(state, viewModel, CommentRelationshipFilter.TOP_LEVEL, R.string.comments_filter_top_level)
@@ -123,16 +124,68 @@ private fun ScopeSelector(state: CommentsUiState, viewModel: CommentsViewModel) 
     Box {
         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
             Text(
-                selected?.let { "${it.title} · ${stringResource(it.sourceLabelRes)}" }
+                selected?.let { "${it.title} Â· ${stringResource(it.sourceLabelRes)}" }
                     ?: stringResource(R.string.comments_select_import)
             )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             state.scopes.forEach { scope ->
                 DropdownMenuItem(
-                    text = { Text("${scope.title} · ${stringResource(scope.sourceLabelRes)}") },
+                    text = { Text("${scope.title} Â· ${stringResource(scope.sourceLabelRes)}") },
                     onClick = {
                         viewModel.selectImport(scope.importId)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ViewModeChip(
+    state: CommentsUiState,
+    viewModel: CommentsViewModel,
+    mode: CommentViewMode,
+    label: String
+) {
+    FilterChip(
+        selected = state.viewMode == mode,
+        onClick = { viewModel.setViewMode(mode) },
+        label = { Text(label) }
+    )
+}
+
+@Composable
+private fun SortModeDropdown(state: CommentsUiState, viewModel: CommentsViewModel) {
+    var expanded by remember { mutableStateOf(false) }
+    val label = when (state.sortMode) {
+        CommentSortMode.NEWEST -> "Newest"
+        CommentSortMode.OLDEST -> "Oldest"
+        CommentSortMode.MOST_ENGAGED -> "Most Engaged"
+        CommentSortMode.NEEDS_ATTENTION -> "Needs Attention"
+        CommentSortMode.GROUP_SIZE -> "Group Size"
+    }
+    Box {
+        OutlinedButton(onClick = { expanded = true }) {
+            Text("Sort: $label")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            CommentSortMode.entries.forEach { mode ->
+                if (mode == CommentSortMode.GROUP_SIZE && state.viewMode != CommentViewMode.CATEGORIES) {
+                    return@forEach
+                }
+                val modeLabel = when (mode) {
+                    CommentSortMode.NEWEST -> "Newest"
+                    CommentSortMode.OLDEST -> "Oldest"
+                    CommentSortMode.MOST_ENGAGED -> "Most Engaged"
+                    CommentSortMode.NEEDS_ATTENTION -> "Needs Attention"
+                    CommentSortMode.GROUP_SIZE -> "Group Size"
+                }
+                DropdownMenuItem(
+                    text = { Text(modeLabel) },
+                    onClick = {
+                        viewModel.setSortMode(mode)
                         expanded = false
                     }
                 )
@@ -171,6 +224,17 @@ private fun CommentRow(comment: CommentRowUiModel) {
                 Text(stringResource(R.string.comments_video_id, it), style = MaterialTheme.typography.bodySmall)
             }
             Text(comment.text, style = MaterialTheme.typography.bodyLarge)
+
+            // JEV label badges if present
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                comment.category?.let {
+                    AssistChip(onClick = {}, label = { Text(it) })
+                }
+                comment.sentiment?.let {
+                    AssistChip(onClick = {}, label = { Text(it) })
+                }
+            }
+
             comment.parentCommentId?.let {
                 Text(stringResource(R.string.comments_reply_to, it), style = MaterialTheme.typography.bodySmall)
             }

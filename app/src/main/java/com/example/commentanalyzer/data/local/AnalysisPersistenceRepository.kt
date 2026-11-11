@@ -273,6 +273,12 @@ class AnalysisPersistenceRepository(
                 "JEV response question does not match the requested item"
             }
             require(validated.probability.isFinite() && validated.probability in 0.0..1.0)
+            if (batch.processingConfigVersion >= 2L) {
+                require(validated.category != null && validated.category in JEV_CATEGORIES)
+                require(validated.sentiment != null && validated.sentiment in JEV_SENTIMENTS)
+                require(validated.categoryConfidence == null || (validated.categoryConfidence.isFinite() && validated.categoryConfidence in 0.0..1.0))
+                require(validated.sentimentConfidence == null || (validated.sentimentConfidence.isFinite() && validated.sentimentConfidence in 0.0..1.0))
+            }
             resultEntity(
                 batch = batch,
                 item = itemByCommentId.getValue(item.commentId),
@@ -283,7 +289,11 @@ class AnalysisPersistenceRepository(
                 outputTokens = response.outputTokens,
                 costUsd = response.costUsd,
                 passed = validated.probability >= passThreshold,
-                probability = validated.probability
+                probability = validated.probability,
+                category = validated.category,
+                sentiment = validated.sentiment,
+                categoryConfidence = validated.categoryConfidence,
+                sentimentConfidence = validated.sentimentConfidence
             )
         }
         val comments = database.commentDao().getCommentsByIds(items.map { it.commentId })
@@ -292,20 +302,36 @@ class AnalysisPersistenceRepository(
                 it.currentStage == ProcessingStage.JEV_GATE
         }) { "JEV comments are not in progress" }
         val commentUpdates = comments.map { comment ->
-            val probability = requireNotNull(byCommentId[comment.localId]).probability
+            val validated = requireNotNull(byCommentId[comment.localId])
+            val probability = validated.probability
             val (state, stage) = when {
                 probability >= passThreshold -> ProcessingState.READY_GLM to ProcessingStage.GLM_ANALYSIS
                 probability <= rejectThreshold -> ProcessingState.JEV_REJECTED to ProcessingStage.JEV_GATE
                 else -> ProcessingState.MANUAL_REVIEW to ProcessingStage.JEV_GATE
             }
-            comment.copy(
-                processingState = state,
-                currentStage = stage,
-                leaseOwner = null,
-                leaseExpiresAt = null,
-                nextAttemptAt = null,
-                updatedAt = clock()
-            )
+            if (batch.processingConfigVersion >= 2L) {
+                comment.copy(
+                    processingState = state,
+                    currentStage = stage,
+                    category = validated.category,
+                    sentiment = validated.sentiment,
+                    categoryConfidence = validated.categoryConfidence,
+                    sentimentConfidence = validated.sentimentConfidence,
+                    leaseOwner = null,
+                    leaseExpiresAt = null,
+                    nextAttemptAt = null,
+                    updatedAt = clock()
+                )
+            } else {
+                comment.copy(
+                    processingState = state,
+                    currentStage = stage,
+                    leaseOwner = null,
+                    leaseExpiresAt = null,
+                    nextAttemptAt = null,
+                    updatedAt = clock()
+                )
+            }
         }
         persistSuccess(
             batch = batch,
@@ -560,7 +586,9 @@ class AnalysisPersistenceRepository(
         confidence: Double? = null,
         category: String? = null,
         sentiment: String? = null,
-        summary: String? = null
+        summary: String? = null,
+        categoryConfidence: Double? = null,
+        sentimentConfidence: Double? = null
     ) = AnalysisResultEntity(
         resultId = "analysis:${item.batchItemId}",
         commentId = item.commentId,
@@ -581,7 +609,9 @@ class AnalysisPersistenceRepository(
         rawPayloadJson = null,
         createdAt = clock(),
         batchId = batch.batchId,
-        confidence = confidence
+        confidence = confidence,
+        categoryConfidence = categoryConfidence,
+        sentimentConfidence = sentimentConfidence
     )
 
     private fun requireSafeMetadata(
@@ -622,6 +652,8 @@ class AnalysisPersistenceRepository(
         val ERROR_CODE = Regex("[A-Z0-9][A-Z0-9_]{0,63}")
         val GLM_CATEGORIES = setOf("feedback", "question", "criticism", "praise", "spam", "other")
         val GLM_SENTIMENTS = setOf("positive", "neutral", "negative", "mixed")
+        val JEV_CATEGORIES = setOf("praise", "criticism", "feedback", "question", "spam", "other")
+        val JEV_SENTIMENTS = setOf("positive", "neutral", "negative")
         const val MAX_SUMMARY_LENGTH = 500
         const val GLM_SCHEMA_VERSION = 1
         const val LOCAL_FILTER_MODEL = "local-filter/v1"

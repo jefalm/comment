@@ -20,6 +20,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -49,6 +50,248 @@ class AnalysisPersistenceRepositoryTest {
     @After
     fun tearDown() {
         database.close()
+    }
+
+    @Test
+    fun validatedJevV2PersistsSignalsIndependentlyAndPreservesHistoricalV1() = runBlocking {
+        // Setup a v2 batch with comments
+        val batchV2 = "batch-v2"
+        val configV2 = 2L
+        now = 100L
+        val comments = listOf(
+            comment("c1").copy(
+                processingConfigVersion = configV2,
+                processingState = ProcessingState.READY_JEV,
+                currentStage = ProcessingStage.JEV_GATE
+            ),
+            comment("c2").copy(
+                processingConfigVersion = configV2,
+                processingState = ProcessingState.READY_JEV,
+                currentStage = ProcessingStage.JEV_GATE
+            )
+        )
+        database.commentDao().insertComments(comments)
+        val batchEntity = ProcessingBatchEntity(
+            batchId = batchV2,
+            stage = ProcessingStage.JEV_GATE,
+            status = BatchStatus.PLANNED,
+            parentBatchId = null,
+            processingConfigVersion = configV2,
+            modelRequested = "typesafe/jev-1.14",
+            modelResolved = null,
+            requestFingerprintSha256 = "fingerprint-v2",
+            requestItemCount = 2,
+            requestUtf8Bytes = 100,
+            estimatedInputTokens = 20,
+            maxOutputTokens = 10,
+            attemptCount = 0,
+            leaseOwner = null,
+            leaseExpiresAt = null,
+            nextAttemptAt = null,
+            remoteRequestId = null,
+            provider = null,
+            inputTokens = null,
+            outputTokens = null,
+            costUsd = null,
+            createdAt = 100L,
+            updatedAt = 100L,
+            lastErrorCode = null,
+            lastErrorSummary = null,
+            importId = IMPORT_ID
+        )
+        val items = listOf(
+            ProcessingBatchItemEntity(
+                batchItemId = "$batchV2:item:1",
+                batchId = batchV2,
+                commentId = "c1",
+                ordinal = 0,
+                questionKey = QUESTION_KEY,
+                requestItemId = "c1",
+                status = BatchItemStatus.PLANNED,
+                attemptCount = 0,
+                nextAttemptAt = null,
+                childBatchId = null,
+                analysisResultId = null,
+                lastErrorCode = null,
+                createdAt = 100L,
+                updatedAt = 100L
+            ),
+            ProcessingBatchItemEntity(
+                batchItemId = "$batchV2:item:2",
+                batchId = batchV2,
+                commentId = "c2",
+                ordinal = 1,
+                questionKey = QUESTION_KEY,
+                requestItemId = "c2",
+                status = BatchItemStatus.PLANNED,
+                attemptCount = 0,
+                nextAttemptAt = null,
+                childBatchId = null,
+                analysisResultId = null,
+                lastErrorCode = null,
+                createdAt = 100L,
+                updatedAt = 100L
+            )
+        )
+        repository.createBatch(batchEntity, items)
+        assertTrue(repository.markBatchInFlight(batchV2))
+
+        now = 200L
+        val gateBatchResult = GateBatchResult(
+            batchId = "remote-jev-v2",
+            modelResolved = "typesafe/jev-1.14",
+            provider = "openrouter",
+            inputTokens = 30,
+            outputTokens = 15,
+            costUsd = 0.002,
+            results = listOf(
+                GateItemResult(
+                    commentId = "c1",
+                    questionKey = QUESTION_KEY,
+                    probability = 0.85,
+                    rawOutput = null,
+                    category = "praise",
+                    categoryConfidence = 0.95,
+                    sentiment = "positive",
+                    sentimentConfidence = 0.9
+                ),
+                GateItemResult(
+                    commentId = "c2",
+                    questionKey = QUESTION_KEY,
+                    probability = 0.15,
+                    rawOutput = null,
+                    category = "spam",
+                    categoryConfidence = 0.88,
+                    sentiment = "negative",
+                    sentimentConfidence = 0.82
+                )
+            ),
+            error = null
+        )
+        assertTrue(repository.persistValidatedJevBatch(batchV2, gateBatchResult))
+
+        val c1Updated = requireNotNull(database.commentDao().getCommentById("c1"))
+        val c2Updated = requireNotNull(database.commentDao().getCommentById("c2"))
+        assertEquals(ProcessingState.READY_GLM, c1Updated.processingState)
+        assertEquals("praise", c1Updated.category)
+        assertEquals(0.95, c1Updated.categoryConfidence!!, 0.001)
+        assertEquals("positive", c1Updated.sentiment)
+        assertEquals(0.9, c1Updated.sentimentConfidence!!, 0.001)
+
+        assertEquals(ProcessingState.JEV_REJECTED, c2Updated.processingState)
+        assertEquals("spam", c2Updated.category)
+        assertEquals(0.88, c2Updated.categoryConfidence!!, 0.001)
+        assertEquals("negative", c2Updated.sentiment)
+        assertEquals(0.82, c2Updated.sentimentConfidence!!, 0.001)
+
+        val results = database.analysisResultDao().getResultsForBatch(batchV2)
+        assertEquals(2, results.size)
+        val r1 = results.first { it.commentId == "c1" }
+        assertEquals(0.85, r1.probability!!, 0.001)
+        assertEquals("praise", r1.category)
+        assertEquals("positive", r1.sentiment)
+        assertEquals(0.95, r1.categoryConfidence!!, 0.001)
+        assertEquals(0.9, r1.sentimentConfidence!!, 0.001)
+    }
+
+    @Test
+    fun validatedJevV2FailsClosedOnInvalidCategoryWithNoPartialPersistence() = runBlocking {
+        val batchV2 = "batch-v2-fail"
+        val configV2 = 2L
+        now = 100L
+        val comments = listOf(
+            comment("cf1").copy(
+                processingConfigVersion = configV2,
+                processingState = ProcessingState.READY_JEV,
+                currentStage = ProcessingStage.JEV_GATE
+            )
+        )
+        database.commentDao().insertComments(comments)
+        val batchEntity = ProcessingBatchEntity(
+            batchId = batchV2,
+            stage = ProcessingStage.JEV_GATE,
+            status = BatchStatus.PLANNED,
+            parentBatchId = null,
+            processingConfigVersion = configV2,
+            modelRequested = "typesafe/jev-1.14",
+            modelResolved = null,
+            requestFingerprintSha256 = "fingerprint-fail",
+            requestItemCount = 1,
+            requestUtf8Bytes = 50,
+            estimatedInputTokens = 10,
+            maxOutputTokens = 5,
+            attemptCount = 0,
+            leaseOwner = null,
+            leaseExpiresAt = null,
+            nextAttemptAt = null,
+            remoteRequestId = null,
+            provider = null,
+            inputTokens = null,
+            outputTokens = null,
+            costUsd = null,
+            createdAt = 100L,
+            updatedAt = 100L,
+            lastErrorCode = null,
+            lastErrorSummary = null,
+            importId = IMPORT_ID
+        )
+        val items = listOf(
+            ProcessingBatchItemEntity(
+                batchItemId = "$batchV2:item:1",
+                batchId = batchV2,
+                commentId = "cf1",
+                ordinal = 0,
+                questionKey = QUESTION_KEY,
+                requestItemId = "cf1",
+                status = BatchItemStatus.PLANNED,
+                attemptCount = 0,
+                nextAttemptAt = null,
+                childBatchId = null,
+                analysisResultId = null,
+                lastErrorCode = null,
+                createdAt = 100L,
+                updatedAt = 100L
+            )
+        )
+        repository.createBatch(batchEntity, items)
+        assertTrue(repository.markBatchInFlight(batchV2))
+
+        val invalidResult = GateBatchResult(
+            batchId = "remote-jev-v2-invalid",
+            modelResolved = "typesafe/jev-1.14",
+            provider = "openrouter",
+            inputTokens = 10,
+            outputTokens = 5,
+            costUsd = 0.001,
+            results = listOf(
+                GateItemResult(
+                    commentId = "cf1",
+                    questionKey = QUESTION_KEY,
+                    probability = 0.85,
+                    rawOutput = null,
+                    category = "invalid_category",
+                    categoryConfidence = 0.9,
+                    sentiment = "positive",
+                    sentimentConfidence = 0.9
+                )
+            ),
+            error = null
+        )
+
+        var threw = false
+        try {
+            repository.persistValidatedJevBatch(batchV2, invalidResult)
+        } catch (_: IllegalArgumentException) {
+            threw = true
+        }
+        assertTrue(threw)
+
+        // Verify zero partial persistence
+        val cf1 = requireNotNull(database.commentDao().getCommentById("cf1"))
+        assertNull(cf1.category)
+        assertNull(cf1.sentiment)
+        assertEquals(ProcessingState.JEV_IN_PROGRESS, cf1.processingState)
+        assertTrue(database.analysisResultDao().getResultsForBatch(batchV2).isEmpty())
     }
 
     @Test
@@ -420,7 +663,7 @@ class AnalysisPersistenceRepositoryTest {
     private companion object {
         const val BATCH_ID = "batch-1"
         const val IMPORT_ID = "import-1"
-        const val CONFIG_VERSION = 7L
+        const val CONFIG_VERSION = 1L
         const val QUESTION_KEY = "comment_quality_gate"
     }
 }
