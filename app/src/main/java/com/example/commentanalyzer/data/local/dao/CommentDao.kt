@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import androidx.paging.PagingSource
 import com.example.commentanalyzer.data.local.entity.CommentEntity
 import com.example.commentanalyzer.data.local.entity.ProcessingState
@@ -25,6 +26,50 @@ interface CommentDao {
 
     @Query("SELECT * FROM comments WHERE localId IN (:localIds)")
     suspend fun getCommentsByIds(localIds: List<String>): List<CommentEntity>
+
+    @Query(
+        """
+        SELECT * FROM comments
+        WHERE importId = :importId
+            AND processingConfigVersion = :configVersion
+            AND processingState = 'IMPORTED'
+            AND currentStage = 'INGESTION'
+        ORDER BY localId
+        LIMIT :limit
+        """
+    )
+    suspend fun getImportedCommentsForAnalysis(
+        importId: String,
+        configVersion: Long,
+        limit: Int
+    ): List<CommentEntity>
+
+    @Query(
+        """
+        SELECT * FROM comments
+        WHERE importId = :importId
+            AND processingConfigVersion = :configVersion
+            AND processingState = :state
+            AND currentStage = :stage
+            AND (:state != 'RETRY_WAIT' OR nextAttemptAt IS NULL OR nextAttemptAt <= :now)
+        ORDER BY localId
+        LIMIT :limit
+        """
+    )
+    suspend fun getCommentsForAnalysisStage(
+        importId: String,
+        configVersion: Long,
+        state: ProcessingState,
+        stage: ProcessingStage,
+        now: Long,
+        limit: Int
+    ): List<CommentEntity>
+
+    @Update
+    suspend fun updateComment(comment: CommentEntity): Int
+
+    @Update
+    suspend fun updateComments(comments: List<CommentEntity>): Int
 
         @Query(
                 """

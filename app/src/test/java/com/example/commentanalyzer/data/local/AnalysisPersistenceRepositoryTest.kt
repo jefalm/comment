@@ -293,12 +293,23 @@ class AnalysisPersistenceRepositoryTest {
         })
 
         now = 300L
+        assertFalse(repository.markBatchInFlight(BATCH_ID))
+        assertEquals(1, database.processingBatchDao().getBatchById(BATCH_ID)?.attemptCount)
+        now = 500L
         assertTrue(repository.markBatchInFlight(BATCH_ID))
         assertEquals(2, database.processingBatchDao().getBatchById(BATCH_ID)?.attemptCount)
         assertEquals(250L, database.processingBatchDao().getBatchById(BATCH_ID)?.failedAt)
     }
 
     private suspend fun prepareBatch(stage: ProcessingStage, batchId: String = BATCH_ID) {
+        val state = if (stage == ProcessingStage.JEV_GATE) {
+            ProcessingState.READY_JEV
+        } else {
+            ProcessingState.READY_GLM
+        }
+        val commentStage = stage
+        database.commentDao().updateComment(comment("comment-1").copy(processingState = state, currentStage = commentStage))
+        database.commentDao().updateComment(comment("comment-2").copy(processingState = state, currentStage = commentStage))
         repository.createBatch(
             batch(stage, batchId),
             listOf(
