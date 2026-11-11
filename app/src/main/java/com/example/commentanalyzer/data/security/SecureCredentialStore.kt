@@ -29,4 +29,12 @@ class SecureCredentialStore(context: Context) {
     fun clearApiKey(keyName: String) {
         sharedPreferences.edit().remove(keyName).apply()
     }
+
+    fun saveBoolean(keyName: String, value: Boolean) {
+        sharedPreferences.edit().putBoolean(keyName, value).apply()
+    }
+
+    fun getBoolean(keyName: String, defaultValue: Boolean): Boolean {
+        return sharedPreferences.getBoolean(keyName, defaultValue)
+    }
 }

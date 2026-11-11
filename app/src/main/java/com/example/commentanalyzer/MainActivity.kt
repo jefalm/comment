@@ -51,7 +51,13 @@ class MainActivity : ComponentActivity() {
                         settingsContent = {
                             YouTubeCredentialSettingsScreen(
                                 hasYouTubeApiKey = uiState.hasYouTubeApiKey,
-                                onManageApiKey = { showYouTubeApiKeyDialog(viewModel) }
+                                onManageApiKey = { showYouTubeApiKeyDialog(viewModel) },
+                                hasOpenRouterKey = uiState.hasOpenRouterKey,
+                                openrouterKeyMask = uiState.openrouterKeyMask,
+                                onManageOpenRouterKey = { showOpenRouterApiKeyDialog(viewModel) },
+                                remoteProcessingConsent = uiState.remoteProcessingConsent,
+                                onRemoteProcessingConsentChange = { viewModel.setRemoteProcessingConsent(it) },
+                                isRemoteProcessingReady = uiState.isRemoteProcessingReady
                             )
                         }
                     )
@@ -144,7 +150,70 @@ class MainActivity : ComponentActivity() {
         dialog.show()
     }
 
+    private fun showOpenRouterApiKeyDialog(viewModel: CommentViewerViewModel) {
+        val app = application as CommentAnalyzerApplication
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hint = "Paste OpenRouter API key"
+            contentDescription = "OpenRouter API key"
+            maxLines = 1
+            isSaveEnabled = false
+            importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_NO
+        }
+        val deleteButton = Button(this).apply { text = "Delete saved OpenRouter key" }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 12, 48, 0)
+            addView(input)
+            addView(deleteButton)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("OpenRouter API key")
+            .setMessage("The OpenRouter key is stored securely. Remote processing requires both a key and explicit consent.")
+            .setView(content)
+            .setNegativeButton("Close", null)
+            .setPositiveButton("Save or replace", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val candidate = input.text.toString()
+                if (candidate.isBlank()) {
+                    Toast.makeText(this, "Enter a key first", Toast.LENGTH_SHORT).show()
+                } else {
+                    runCatching {
+                        app.secureCredentialStore.saveApiKey(OPENROUTER_API_KEY_NAME, candidate)
+                    }.onSuccess {
+                        viewModel.refreshOpenRouterStatus()
+                        Toast.makeText(this, "OpenRouter key saved", Toast.LENGTH_SHORT).show()
+                        dialog.dismiss()
+                    }.onFailure {
+                        Toast.makeText(this, "Secure key storage is unavailable", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            deleteButton.setOnClickListener {
+                AlertDialog.Builder(this)
+                    .setMessage("Delete the saved OpenRouter API key?")
+                    .setNegativeButton("Keep key", null)
+                    .setPositiveButton("Delete") { _, _ ->
+                        runCatching { app.secureCredentialStore.clearApiKey(OPENROUTER_API_KEY_NAME) }
+                            .onSuccess {
+                                input.text?.clear()
+                                viewModel.refreshOpenRouterStatus()
+                                Toast.makeText(this, "OpenRouter key deleted", Toast.LENGTH_SHORT).show()
+                            }
+                            .onFailure {
+                                Toast.makeText(this, "Secure key storage is unavailable", Toast.LENGTH_SHORT).show()
+                            }
+                    }
+                    .show()
+            }
+        }
+        dialog.show()
+    }
+
     private companion object {
         const val YOUTUBE_API_KEY_NAME = CommentAnalyzerApplication.YOUTUBE_API_KEY_NAME
+        const val OPENROUTER_API_KEY_NAME = CommentAnalyzerApplication.OPENROUTER_API_KEY_NAME
     }
 }

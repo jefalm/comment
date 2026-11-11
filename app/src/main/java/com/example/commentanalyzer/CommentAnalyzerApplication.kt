@@ -28,5 +28,7 @@ class CommentAnalyzerApplication : Application() {
 
     companion object {
         const val YOUTUBE_API_KEY_NAME = "youtube_data_api_key"
+        const val OPENROUTER_API_KEY_NAME = "openrouter_api_key"
+        const val OPENROUTER_CONSENT_KEY = "openrouter_remote_consent"
     }
 }

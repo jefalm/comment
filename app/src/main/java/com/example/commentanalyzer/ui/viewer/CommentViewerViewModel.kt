@@ -58,6 +58,10 @@ data class CommentViewerUiState(
     val activeImportId: String? = null,
     val resumableImportId: String? = null,
     val hasYouTubeApiKey: Boolean = false,
+    val hasOpenRouterKey: Boolean = false,
+    val openrouterKeyMask: String = "Not configured",
+    val remoteProcessingConsent: Boolean = false,
+    val isRemoteProcessingReady: Boolean = false,
     val isReadingTxt: Boolean = false,
     val txtFileName: String? = null,
     val txtFilePath: String? = null,
@@ -76,6 +80,7 @@ class CommentViewerViewModel(application: Application) : AndroidViewModel(applic
 
     init {
         refreshApiKeyStatus()
+        refreshOpenRouterStatus()
         refreshResumableImport()
     }
 
@@ -101,6 +106,32 @@ class CommentViewerViewModel(application: Application) : AndroidViewModel(applic
             !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.YOUTUBE_API_KEY_NAME).isNullOrBlank()
         }.getOrDefault(false)
         _uiState.update { it.copy(hasYouTubeApiKey = hasKey) }
+    }
+
+    fun refreshOpenRouterStatus() {
+        val hasKey = runCatching {
+            !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.OPENROUTER_API_KEY_NAME).isNullOrBlank()
+        }.getOrDefault(false)
+        val consent = runCatching {
+            app.secureCredentialStore.getBoolean(CommentAnalyzerApplication.OPENROUTER_CONSENT_KEY, false)
+        }.getOrDefault(false)
+        val mask = if (hasKey) "Configured (••••)" else "Not configured"
+        _uiState.update {
+            it.copy(
+                hasOpenRouterKey = hasKey,
+                openrouterKeyMask = mask,
+                remoteProcessingConsent = consent,
+                isRemoteProcessingReady = hasKey && consent
+            )
+        }
+    }
+
+    fun setRemoteProcessingConsent(consent: Boolean) {
+        runCatching {
+            app.secureCredentialStore.saveBoolean(CommentAnalyzerApplication.OPENROUTER_CONSENT_KEY, consent)
+        }.onSuccess {
+            refreshOpenRouterStatus()
+        }
     }
 
     fun previewYouTube() {

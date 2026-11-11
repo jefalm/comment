@@ -40,4 +40,8 @@
     <string name="comments_likes">%1$d likes</string>
     <string name="comments_reply_to">Reply to %1$s</string>
     <string name="comments_id">Comment ID: %1$s</string>
+    <string name="settings_openrouter_title">OpenRouter API key</string>
+    <string name="settings_openrouter_manage">Manage OpenRouter API key</string>
+    <string name="settings_remote_processing_title">Enable remote AI processing</string>
+    <string name="settings_remote_processing_subtitle">Requires explicit consent. Key presence alone does not enable remote processing.</string>
 </resources>
