@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.paging.PagingSource
 import com.example.commentanalyzer.data.local.entity.CommentEntity
 import com.example.commentanalyzer.data.local.entity.ProcessingState
 import com.example.commentanalyzer.data.local.entity.ProcessingStage
@@ -21,6 +22,25 @@ interface CommentDao {
 
     @Query("SELECT * FROM comments WHERE localId = :localId")
     suspend fun getCommentById(localId: String): CommentEntity?
+
+        @Query(
+                """
+                SELECT * FROM comments
+                WHERE importId = :importId
+                    AND (:query = '' OR originalText LIKE '%' || :query || '%' COLLATE NOCASE)
+                    AND (
+                        :relationship = -1
+                        OR (:relationship = 0 AND parentSourceCommentId IS NULL)
+                        OR (:relationship = 1 AND parentSourceCommentId IS NOT NULL)
+                    )
+                ORDER BY publishedAtEpochMillis DESC, localId ASC
+                """
+        )
+        fun pagingComments(
+                importId: String,
+                query: String,
+                relationship: Int
+        ): PagingSource<Int, CommentEntity>
 
     @Query("UPDATE comments SET processingState = :newState, currentStage = :newStage, updatedAt = :updatedAt WHERE localId = :localId AND processingState = :expectedState")
     suspend fun updateStateCas(localId: String, expectedState: ProcessingState, newState: ProcessingState, newStage: ProcessingStage, updatedAt: Long): Int

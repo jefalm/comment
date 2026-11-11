@@ -23,4 +23,21 @@
     <string name="home_youtube_input_clear">Clear YouTube input</string>
     <string name="home_youtube_load_video">Load video</string>
     <string name="home_youtube_key_required">Add a YouTube Data API key in Settings to load a video.</string>
+    <string name="comments_title">Comments</string>
+    <string name="comments_no_imports">No persisted comments yet. Import comments from Home to browse them.</string>
+    <string name="comments_select_import">Select an import</string>
+    <string name="comments_search">Search comments</string>
+    <string name="comments_clear_search">Clear comment search</string>
+    <string name="comments_filter_all">All</string>
+    <string name="comments_filter_top_level">Top-level</string>
+    <string name="comments_filter_replies">Replies</string>
+    <string name="comments_no_matching">No comments match this search and relationship filter.</string>
+    <string name="comments_load_error">Could not load persisted comments.</string>
+    <string name="comments_source_youtube">YouTube</string>
+    <string name="comments_source_txt">TXT export</string>
+    <string name="comments_source_other">Imported source</string>
+    <string name="comments_video_id">Video ID: %1$s</string>
+    <string name="comments_likes">%1$d likes</string>
+    <string name="comments_reply_to">Reply to %1$s</string>
+    <string name="comments_id">Comment ID: %1$s</string>
 </resources>

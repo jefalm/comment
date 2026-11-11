@@ -9,12 +9,10 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,8 +35,7 @@ class CommentAnalyzerNavigationTest {
     fun topLevelDestinationsShowHonestUnavailableStates() {
         setNavigationContent()
         composeRule.onNodeWithTag("destination_comments").performClick()
-        composeRule.onNodeWithTag("comments_unavailable").assertIsDisplayed()
-        assertTrue(composeRule.onAllNodesWithText("Retry").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithText("Comments content").assertIsDisplayed()
 
         composeRule.onNodeWithTag("destination_analysis").performClick()
         composeRule.onNodeWithTag("analysis_unavailable").assertIsDisplayed()
@@ -77,6 +74,7 @@ class CommentAnalyzerNavigationTest {
             MaterialTheme {
                 CommentAnalyzerNavigation(
                     homeContent = { Text("Home content") },
+                    commentsContent = { Text("Comments content") },
                     settingsContent = { Text("YouTube settings content") }
                 )
             }

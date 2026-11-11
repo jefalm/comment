@@ -40,6 +40,7 @@ private enum class AnalyzerDestination(
 @Composable
 fun CommentAnalyzerNavigation(
     homeContent: @Composable () -> Unit,
+    commentsContent: @Composable () -> Unit,
     settingsContent: @Composable () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -81,13 +82,7 @@ fun CommentAnalyzerNavigation(
                 homeContent()
             }
             composable(AnalyzerDestination.COMMENTS.route) {
-                UiStatusContent(
-                    status = UiPresentationState.Unavailable(
-                        titleRes = R.string.comments_unavailable_title,
-                        messageRes = R.string.comments_unavailable_message
-                    ),
-                    modifier = Modifier.testTag("comments_unavailable")
-                )
+                commentsContent()
             }
             composable(AnalyzerDestination.ANALYSIS.route) {
                 UiStatusContent(

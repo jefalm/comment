@@ -18,6 +18,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.lifecycleScope
 import com.example.commentanalyzer.network.youtube.YouTubeApiService
+import com.example.commentanalyzer.ui.comments.CommentsScreen
+import com.example.commentanalyzer.ui.comments.CommentsViewModel
 import com.example.commentanalyzer.ui.navigation.CommentAnalyzerNavigation
 import com.example.commentanalyzer.ui.settings.YouTubeCredentialSettingsScreen
 import com.example.commentanalyzer.ui.viewer.CommentViewerScreen
@@ -36,6 +38,7 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val viewModel: CommentViewerViewModel = viewModel()
+                    val commentsViewModel: CommentsViewModel = viewModel()
                     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
                     CommentAnalyzerNavigation(
                         homeContent = {
@@ -44,6 +47,7 @@ class MainActivity : ComponentActivity() {
                                 onManageApiKey = { showYouTubeApiKeyDialog(viewModel) }
                             )
                         },
+                        commentsContent = { CommentsScreen(commentsViewModel) },
                         settingsContent = {
                             YouTubeCredentialSettingsScreen(
                                 hasYouTubeApiKey = uiState.hasYouTubeApiKey,

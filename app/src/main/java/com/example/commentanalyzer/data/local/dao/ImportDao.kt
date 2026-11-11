@@ -22,6 +22,18 @@ interface ImportDao {
     @Query("SELECT * FROM imports WHERE importId = :importId")
     fun observeImportById(importId: String): Flow<ImportEntity?>
 
+    @Query(
+        """
+        SELECT imports.* FROM imports
+        WHERE EXISTS (
+            SELECT 1 FROM comments WHERE comments.importId = imports.importId
+        )
+        ORDER BY COALESCE(imports.completedAt, imports.startedAt) DESC, imports.importId ASC
+        LIMIT 20
+        """
+    )
+    fun observeRecentImportsWithComments(): Flow<List<ImportEntity>>
+
     @Query("SELECT * FROM imports WHERE sourceType = 'YOUTUBE_API' AND (status IN ('CANCELLED', 'PAUSED') OR (status = 'FAILED' AND retryable = 1)) ORDER BY startedAt DESC LIMIT 1")
     suspend fun getLatestResumableYouTubeImport(): ImportEntity?
 }
