@@ -44,6 +44,9 @@ interface CommentDao {
     @Query("SELECT * FROM comments WHERE localId IN (:localIds)")
     suspend fun getCommentsByIds(localIds: List<String>): List<CommentEntity>
 
+    @Query("SELECT * FROM comments WHERE importId = :importId")
+    suspend fun getCommentsForImport(importId: String): List<CommentEntity>
+
     @Query(
         """
         SELECT * FROM comments
@@ -84,84 +87,77 @@ interface CommentDao {
 
     @Query(
         """
-        SELECT COUNT(*) AS totalComments,
-            COALESCE(SUM(CASE WHEN c.processingState = 'LOCAL_REJECTED' THEN 1 ELSE 0 END), 0) AS locallyRejected,
-            COALESCE(SUM(CASE WHEN c.processingState = 'JEV_REJECTED' THEN 1 ELSE 0 END), 0) AS jevRejected,
-            COALESCE(SUM(CASE WHEN c.processingState = 'COMPLETED' AND EXISTS (
-                SELECT 1 FROM analysis_results r
-                WHERE r.commentId = c.localId
-                    AND r.processingConfigVersion = :configVersion
-                    AND r.stage = 'GLM_ANALYSIS'
-            ) THEN 1 ELSE 0 END), 0) AS completed,
-            COALESCE(SUM(CASE WHEN c.processingState = 'RETRY_WAIT' THEN 1 ELSE 0 END), 0) AS retrying,
-            COALESCE(SUM(CASE WHEN c.processingState = 'FAILED_PERMANENT' THEN 1 ELSE 0 END), 0) AS permanentlyFailed,
-            COALESCE(SUM(CASE WHEN c.processingState IN ('JEV_IN_PROGRESS', 'GLM_IN_PROGRESS') THEN 1 ELSE 0 END), 0) AS inProgress
-        FROM comments c
-        WHERE c.importId = :importId
-            AND c.processingConfigVersion = :configVersion
+        SELECT * FROM comments
+        WHERE importId = :importId
+            AND processingConfigVersion = :configVersion
+            AND processingState IN ('READY_GLM', 'COMPLETED', 'JEV_REJECTED', 'MANUAL_REVIEW')
+        ORDER BY localId
         """
     )
-    fun observeAnalysisProcessingCounts(
-        importId: String,
-        configVersion: Long
-    ): Flow<AnalysisProcessingCounts>
+    suspend fun getCommentsForSynthesis(importId: String, configVersion: Long): List<CommentEntity>
 
     @Query(
         """
-        SELECT DISTINCT processingConfigVersion
+        SELECT
+            COUNT(*) as totalComments,
+            SUM(CASE WHEN processingState = 'LOCAL_REJECTED' THEN 1 ELSE 0 END) as locallyRejected,
+            SUM(CASE WHEN processingState = 'JEV_REJECTED' THEN 1 ELSE 0 END) as jevRejected,
+            SUM(CASE WHEN processingState = 'COMPLETED' THEN 1 ELSE 0 END) as completed,
+            SUM(CASE WHEN processingState = 'RETRY_WAIT' THEN 1 ELSE 0 END) as retrying,
+            SUM(CASE WHEN processingState = 'FAILED_PERMANENT' THEN 1 ELSE 0 END) as permanentlyFailed,
+            SUM(CASE WHEN processingState NOT IN ('LOCAL_REJECTED', 'JEV_REJECTED', 'COMPLETED', 'FAILED_PERMANENT') THEN 1 ELSE 0 END) as inProgress
         FROM comments
-        WHERE importId = :importId
-        ORDER BY processingConfigVersion DESC
+        WHERE importId = :importId AND processingConfigVersion = :configVersion
         """
     )
+    suspend fun getAnalysisProcessingCounts(importId: String, configVersion: Long): AnalysisProcessingCounts?
+
+    @Query(
+        """
+        SELECT category as value, COUNT(*) as count
+        FROM comments
+        WHERE importId = :importId AND processingConfigVersion = :configVersion AND category IS NOT NULL
+        GROUP BY category
+        ORDER BY count DESC
+        """
+    )
+    suspend fun getCategoryDistribution(importId: String, configVersion: Long): List<AnalysisDistributionCount>
+
+    @Query(
+        """
+        SELECT sentiment as value, COUNT(*) as count
+        FROM comments
+        WHERE importId = :importId AND processingConfigVersion = :configVersion AND sentiment IS NOT NULL
+        GROUP BY sentiment
+        ORDER BY count DESC
+        """
+    )
+    suspend fun getSentimentDistribution(importId: String, configVersion: Long): List<AnalysisDistributionCount>
+
+    @Query("SELECT DISTINCT processingConfigVersion FROM comments WHERE importId = :importId ORDER BY processingConfigVersion DESC")
     fun observeAnalysisConfigVersions(importId: String): Flow<List<Long>>
 
     @Query(
         """
-        SELECT c.category AS value, COUNT(*) AS count
-        FROM comments c
+        SELECT c.* FROM comments c
+        LEFT JOIN analysis_results r ON c.localId = r.commentId AND r.processingConfigVersion = c.processingConfigVersion AND r.stage = :stage
         WHERE c.importId = :importId
             AND c.processingConfigVersion = :configVersion
-            AND c.category IS NOT NULL
-            AND EXISTS (
-                SELECT 1 FROM analysis_results r
-                WHERE r.commentId = c.localId
-                    AND r.processingConfigVersion = :configVersion
-                    AND r.stage = 'GLM_ANALYSIS'
+            AND (
+                (:stage = 'LOCAL_FILTER' AND c.processingState = 'IMPORTED' AND c.currentStage = 'INGESTION')
+                OR (:stage = 'JEV_GATE' AND c.processingState = 'READY_JEV' AND c.currentStage = 'JEV_GATE')
+                OR (:stage = 'GLM_ANALYSIS' AND c.processingState = 'READY_GLM' AND c.currentStage = 'GLM_ANALYSIS')
             )
-        GROUP BY c.category
-        ORDER BY c.category
+        ORDER BY c.localId
+        LIMIT :limit
         """
     )
-    fun observeAnalysisCategoryCounts(
+    suspend fun getCommentsNeedingStage(
         importId: String,
-        configVersion: Long
-    ): Flow<List<AnalysisDistributionCount>>
-
-    @Query(
-        """
-        SELECT c.sentiment AS value, COUNT(*) AS count
-        FROM comments c
-        WHERE c.importId = :importId
-            AND c.processingConfigVersion = :configVersion
-            AND c.sentiment IS NOT NULL
-            AND EXISTS (
-                SELECT 1 FROM analysis_results r
-                WHERE r.commentId = c.localId
-                    AND r.processingConfigVersion = :configVersion
-                    AND r.stage = 'GLM_ANALYSIS'
-            )
-        GROUP BY c.sentiment
-        ORDER BY c.sentiment
-        """
-    )
-    fun observeAnalysisSentimentCounts(
-        importId: String,
-        configVersion: Long
-    ): Flow<List<AnalysisDistributionCount>>
-
-    @Update
-    suspend fun updateComment(comment: CommentEntity): Int
+        configVersion: Long,
+        stage: com.example.commentanalyzer.data.local.entity.ResultStage,
+        limit: Int
+    ): List<CommentEntity>
 
     @Update
     suspend fun updateComments(comments: List<CommentEntity>): Int
@@ -199,49 +195,13 @@ interface CommentDao {
                 ELSE ''
             END ASC,
             CASE
-                WHEN :viewMode = 1 THEN
-                    CASE WHEN parentSourceCommentId IS NULL THEN 0 ELSE 1 END
-                ELSE 0
-            END ASC,
-            CASE
-                WHEN :viewMode = 1 THEN
-                    publishedAtEpochMillis
-                ELSE 0
-            END ASC,
-
-            -- Categories view ordering: group by category group size descending, then category name
-            CASE WHEN :viewMode = 2 AND :sort = 4 THEN (SELECT COUNT(*) FROM comments c2 WHERE c2.importId = :importId AND COALESCE(c2.category, 'Unclassified') = COALESCE(comments.category, 'Unclassified')) END DESC,
-            CASE WHEN :viewMode = 2 THEN COALESCE(category, 'Unclassified') END ASC,
-
-            -- Standard sorts
-            CASE WHEN :sort = 0 THEN publishedAtEpochMillis END DESC,
-            CASE WHEN :sort = 1 THEN publishedAtEpochMillis END ASC,
-            CASE WHEN :sort = 2 THEN COALESCE(declaredReplyCount, 0) END DESC,
-            CASE WHEN :sort = 2 THEN COALESCE(likeCount, 0) END DESC,
-            CASE WHEN :sort = 2 THEN publishedAtEpochMillis END DESC,
-            CASE WHEN :sort = 3 THEN
-                CASE category
-                    WHEN 'criticism' THEN 1
-                    WHEN 'feedback' THEN 2
-                    WHEN 'question' THEN 3
-                    WHEN 'negative sentiment' THEN 4
-                    WHEN 'reply count descending' THEN 5
-                    WHEN 'like count descending' THEN 6
-                    WHEN 'published timestamp descending' THEN 7
-                    ELSE 8
-                END
-            END ASC,
-            CASE WHEN :sort = 3 THEN
-                CASE sentiment
-                    WHEN 'negative' THEN 1
-                    WHEN 'neutral' THEN 2
-                    WHEN 'positive' THEN 3
-                    ELSE 4
-                END
-            END ASC,
-            CASE WHEN :sort = 3 THEN COALESCE(declaredReplyCount, 0) END DESC,
-            CASE WHEN :sort = 3 THEN COALESCE(likeCount, 0) END DESC,
-            CASE WHEN :sort = 3 THEN publishedAtEpochMillis END DESC,
+                WHEN :viewMode = 2 AND :sort = 0 THEN publishedAtEpochMillis
+                WHEN :viewMode = 2 AND :sort = 1 THEN COALESCE(likeCount, 0)
+                WHEN :viewMode = 2 AND :sort = 2 THEN COALESCE(declaredReplyCount, 0)
+                WHEN :viewMode = 2 AND :sort = 3 THEN COALESCE(sentimentConfidence, 0.0)
+                WHEN :viewMode = 2 AND :sort = 4 THEN (SELECT COUNT(*) FROM comments c2 WHERE c2.importId = :importId AND c2.parentSourceCommentId = comments.sourceCommentId)
+                ELSE publishedAtEpochMillis
+            END DESC,
             publishedAtEpochMillis DESC,
             localId ASC
         """
@@ -260,15 +220,6 @@ interface CommentDao {
         sort: Int
     ): PagingSource<Int, CommentEntity>
 
-    @Query("UPDATE comments SET processingState = :newState, currentStage = :newStage, updatedAt = :updatedAt WHERE localId = :localId AND processingState = :expectedState")
-    suspend fun updateStateCas(localId: String, expectedState: ProcessingState, newState: ProcessingState, newStage: ProcessingStage, updatedAt: Long): Int
-
     @Query("SELECT * FROM comments WHERE processingState = :state ORDER BY publishedAtEpochMillis DESC")
     suspend fun getCommentsByState(state: ProcessingState): List<CommentEntity>
-
-    @Query("UPDATE comments SET leaseOwner = :owner, leaseExpiresAt = :expiresAt, updatedAt = :updatedAt WHERE localId IN (:localIds) AND (leaseExpiresAt IS NULL OR leaseExpiresAt < :currentTime)")
-    suspend fun claimComments(localIds: List<String>, owner: String, expiresAt: Long, currentTime: Long, updatedAt: Long): Int
-
-    @Query("UPDATE comments SET processingState = :fallbackState, leaseOwner = NULL, leaseExpiresAt = NULL, updatedAt = :updatedAt WHERE leaseExpiresAt IS NOT NULL AND leaseExpiresAt < :currentTime AND processingState IN (:activeStates)")
-    suspend fun reclaimExpiredLeases(currentTime: Long, fallbackState: ProcessingState, activeStates: List<ProcessingState>, updatedAt: Long): Int
 }

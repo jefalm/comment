@@ -19,9 +19,10 @@ import com.example.commentanalyzer.data.local.entity.*
         ProcessingBatchItemEntity::class,
         AnalysisResultEntity::class,
         ProcessingConfigEntity::class,
-        RetryScheduleEntity::class
+        RetryScheduleEntity::class,
+        CommentSynthesisEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -32,6 +33,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun analysisResultDao(): AnalysisResultDao
     abstract fun processingConfigDao(): ProcessingConfigDao
     abstract fun retryScheduleDao(): RetryScheduleDao
+    abstract fun commentSynthesisDao(): CommentSynthesisDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -89,10 +91,33 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS comment_syntheses (" +
+                        "synthesisId TEXT NOT NULL PRIMARY KEY, " +
+                        "importId TEXT NOT NULL, " +
+                        "configVersion INTEGER NOT NULL, " +
+                        "modelRequested TEXT NOT NULL, " +
+                        "modelResolved TEXT, " +
+                        "provider TEXT, " +
+                        "inputTokens INTEGER, " +
+                        "outputTokens INTEGER, " +
+                        "costUsd REAL, " +
+                        "payloadJson TEXT NOT NULL, " +
+                        "createdAt INTEGER NOT NULL)"
+                )
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_comment_syntheses_importId_configVersion " +
+                        "ON comment_syntheses(importId, configVersion)"
+                )
+            }
+        }
+
         fun create(context: Context): AppDatabase = Room.databaseBuilder(
             context.applicationContext,
             AppDatabase::class.java,
             "comment-analyzer.db"
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
     }
 }
