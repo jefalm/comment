@@ -17,7 +17,8 @@ import androidx.room.PrimaryKey
     ],
     indices = [
         Index(value = ["commentId", "processingConfigVersion", "stage"]),
-        Index(value = ["createdAt"])
+        Index(value = ["createdAt"]),
+        Index(value = ["batchId", "commentId"], unique = true)
     ]
 )
 data class AnalysisResultEntity(
@@ -39,5 +40,7 @@ data class AnalysisResultEntity(
     val relevanceScore: Double?,
     val summary: String?,
     val rawPayloadJson: String?,
-    val createdAt: Long
+    val createdAt: Long,
+    val batchId: String? = null,
+    val confidence: Double? = null
 )

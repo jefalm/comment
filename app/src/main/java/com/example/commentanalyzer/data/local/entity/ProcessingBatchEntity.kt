@@ -8,7 +8,8 @@ import androidx.room.PrimaryKey
     tableName = "processing_batches",
     indices = [
         Index(value = ["status", "nextAttemptAt"]),
-        Index(value = ["parentBatchId"])
+        Index(value = ["parentBatchId"]),
+        Index(value = ["importId", "stage", "status", "nextAttemptAt"])
     ]
 )
 data class ProcessingBatchEntity(
@@ -37,5 +38,10 @@ data class ProcessingBatchEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val lastErrorCode: String?,
-    val lastErrorSummary: String?
+    val lastErrorSummary: String?,
+    val importId: String? = null,
+    val startedAt: Long? = null,
+    val completedAt: Long? = null,
+    val failedAt: Long? = null,
+    val responseSchemaVersion: Int? = null
 )

@@ -23,6 +23,9 @@ interface CommentDao {
     @Query("SELECT * FROM comments WHERE localId = :localId")
     suspend fun getCommentById(localId: String): CommentEntity?
 
+    @Query("SELECT * FROM comments WHERE localId IN (:localIds)")
+    suspend fun getCommentsByIds(localIds: List<String>): List<CommentEntity>
+
         @Query(
                 """
                 SELECT * FROM comments

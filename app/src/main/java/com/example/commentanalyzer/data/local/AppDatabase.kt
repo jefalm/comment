@@ -21,7 +21,7 @@ import com.example.commentanalyzer.data.local.entity.*
         ProcessingConfigEntity::class,
         RetryScheduleEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -60,10 +60,30 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE processing_batches ADD COLUMN importId TEXT")
+                database.execSQL("ALTER TABLE processing_batches ADD COLUMN startedAt INTEGER")
+                database.execSQL("ALTER TABLE processing_batches ADD COLUMN completedAt INTEGER")
+                database.execSQL("ALTER TABLE processing_batches ADD COLUMN failedAt INTEGER")
+                database.execSQL("ALTER TABLE processing_batches ADD COLUMN responseSchemaVersion INTEGER")
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_processing_batches_importId_stage_status_nextAttemptAt " +
+                        "ON processing_batches(importId, stage, status, nextAttemptAt)"
+                )
+                database.execSQL("ALTER TABLE analysis_results ADD COLUMN batchId TEXT")
+                database.execSQL("ALTER TABLE analysis_results ADD COLUMN confidence REAL")
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_analysis_results_batchId_commentId " +
+                        "ON analysis_results(batchId, commentId)"
+                )
+            }
+        }
+
         fun create(context: Context): AppDatabase = Room.databaseBuilder(
             context.applicationContext,
             AppDatabase::class.java,
             "comment-analyzer.db"
-        ).addMigrations(MIGRATION_1_2).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
     }
 }
