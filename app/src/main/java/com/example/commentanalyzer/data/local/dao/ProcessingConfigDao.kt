@@ -16,4 +16,7 @@ interface ProcessingConfigDao {
 
     @Query("SELECT * FROM processing_configs WHERE configVersion = :version")
     suspend fun getConfigByVersion(version: Long): ProcessingConfigEntity?
+
+    @Query("UPDATE processing_configs SET isActive = 0 WHERE configVersion != :activeVersion")
+    suspend fun deactivateAllExcept(activeVersion: Long)
 }

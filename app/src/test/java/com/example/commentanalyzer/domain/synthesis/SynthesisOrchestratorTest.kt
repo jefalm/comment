@@ -178,6 +178,23 @@ class SynthesisOrchestratorTest {
 
     @Test
     fun failedSynthesisDoesNotPartiallyPersist() = runBlocking {
+        database.commentDao().insertComments(
+            listOf(
+                CommentEntity(
+                    localId = "c-fail-1", sourceType = SourceType.YOUTUBE, sourceScopeKey = "v1", sourceCommentId = "1",
+                    parentSourceCommentId = null, videoId = "v1", importId = "import-1", authorDisplayName = "U1",
+                    originalText = "Comment to synthesize", normalizedText = "comment to synthesize", publishedAtEpochMillis = 100L,
+                    publishedAtPrecision = null, fingerprintVersion = 1, fingerprintSha256 = "a",
+                    processingState = com.example.commentanalyzer.data.local.entity.ProcessingState.READY_GLM,
+                    currentStage = com.example.commentanalyzer.data.local.entity.ProcessingStage.GLM_ANALYSIS,
+                    category = "praise", sentiment = "positive", relevanceScore = 1.0, processingConfigVersion = 1L,
+                    leaseOwner = null, leaseExpiresAt = null, nextAttemptAt = null, attemptCountLocal = 0,
+                    attemptCountJev = 0, attemptCountGlm = 0, lastErrorCode = null, lastErrorSummary = null,
+                    createdAt = 100L, updatedAt = 100L, likeCount = 10
+                )
+            )
+        )
+
         val failingAnalyzer = object : SynthesisDeepAnalyzer {
             override suspend fun synthesize(context: SynthesisContext): SynthesisBatchResult {
                 return SynthesisBatchResult(

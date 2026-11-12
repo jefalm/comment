@@ -51,6 +51,9 @@ class MainActivity : ComponentActivity() {
                         },
                         commentsContent = { CommentsScreen(commentsViewModel) },
                         analysisViewModel = analysisViewModel,
+                        onNavigateToCommentEvidence = { importId, commentId ->
+                            commentsViewModel.focusComment(importId, commentId)
+                        },
                         settingsContent = {
                             YouTubeCredentialSettingsScreen(
                                 hasYouTubeApiKey = uiState.hasYouTubeApiKey,

@@ -27,10 +27,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.commentanalyzer.R
 import com.example.commentanalyzer.data.local.AnalysisSummary
+import com.example.commentanalyzer.domain.model.SynthesisResult
 import java.util.Locale
 
 @Composable
-fun AnalysisScreen(viewModel: AnalysisViewModel, modifier: Modifier = Modifier) {
+fun AnalysisScreen(
+    viewModel: AnalysisViewModel,
+    onNavigateToComments: (importId: String, commentId: String?) -> Unit = { _, _ -> },
+    modifier: Modifier = Modifier
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val persistedWorkInProgress = (state.summary?.processing?.inProgress ?: 0L) > 0
 
@@ -102,7 +107,11 @@ fun AnalysisScreen(viewModel: AnalysisViewModel, modifier: Modifier = Modifier) 
                 state.configVersions.isEmpty() && !state.isLoading ->
                     Text(stringResource(R.string.analysis_no_config))
                 state.isLoading -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                state.summary != null -> AnalysisSummaryContent(requireNotNull(state.summary))
+                state.summary != null -> AnalysisSummaryContent(
+                    summary = requireNotNull(state.summary),
+                    importId = state.selectedImportId,
+                    onNavigateToComments = onNavigateToComments
+                )
             }
         } else if (state.isLoading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -155,44 +164,387 @@ private fun ConfigSelector(state: AnalysisUiState, viewModel: AnalysisViewModel)
 }
 
 @Composable
-private fun AnalysisSummaryContent(summary: AnalysisSummary) {
+internal fun AnalysisSummaryContent(
+    summary: AnalysisSummary,
+    importId: String?,
+    onNavigateToComments: (String, String?) -> Unit
+) {
     val processing = summary.processing
-    SummarySection(stringResource(R.string.analysis_processing)) {
-        MetricRow(stringResource(R.string.analysis_total), processing.totalComments.toString())
-        MetricRow(stringResource(R.string.analysis_completed), processing.completed.toString())
-        MetricRow(stringResource(R.string.analysis_locally_rejected), processing.locallyRejected.toString())
-        MetricRow(stringResource(R.string.analysis_jev_rejected), processing.jevRejected.toString())
-        MetricRow(stringResource(R.string.analysis_retrying), processing.retrying.toString())
-        MetricRow(stringResource(R.string.analysis_failed), processing.permanentlyFailed.toString())
+    val synthesis = summary.synthesis
+
+    // 2. EXECUTIVE SUMMARY (Hero insight section, visually prominent)
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text("Executive Summary", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (synthesis != null) {
+                    Text(
+                        synthesis.executiveSummary,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                } else {
+                    Text(
+                        "Analysis has not generated synthesis yet. Run analysis to generate GLM synthesis.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 
-    SummarySection(stringResource(R.string.analysis_results)) {
-        DistributionRows(
-            title = stringResource(R.string.analysis_categories),
-            emptyLabel = stringResource(R.string.analysis_no_results),
-            rows = summary.categories.map { it.value to it.count }
-        )
-        DistributionRows(
-            title = stringResource(R.string.analysis_sentiment),
-            emptyLabel = stringResource(R.string.analysis_no_results),
-            rows = summary.sentiments.map { it.value to it.count }
-        )
+    if (synthesis != null) {
+        // 3. KEY THEMES
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Key Themes", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            if (synthesis.themes.isEmpty()) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "No major themes recorded.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            } else {
+                synthesis.themes.forEach { theme ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(theme.title, style = MaterialTheme.typography.titleSmall)
+                            Text(theme.description, style = MaterialTheme.typography.bodyMedium)
+                            if (theme.citedCommentIds.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { importId?.let { onNavigateToComments(it, theme.citedCommentIds.first()) } }
+                                    ) {
+                                        Text("View evidence (${theme.citedCommentIds.size})")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. AGREEMENTS
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Agreements", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            if (synthesis.agreements.isEmpty()) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "No major agreements recorded.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            } else {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        synthesis.agreements.forEachIndexed { index, agreement ->
+                            if (index > 0) {
+                                androidx.compose.material3.HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(agreement.topic, style = MaterialTheme.typography.titleSmall)
+                                Text(agreement.description, style = MaterialTheme.typography.bodyMedium)
+                                if (agreement.citedCommentIds.isNotEmpty()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { importId?.let { onNavigateToComments(it, agreement.citedCommentIds.first()) } }
+                                        ) {
+                                            Text("View evidence (${agreement.citedCommentIds.size})")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. CONTRASTING PERSPECTIVES
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Contrasting Perspectives", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            if (synthesis.contrastingPerspectives.isEmpty()) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "No contrasting perspectives recorded.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            } else {
+                synthesis.contrastingPerspectives.forEach { perspective ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    perspective.perspectiveA,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    " vs ",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    perspective.perspectiveB,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.weight(1f),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.End
+                                )
+                            }
+                            Text(perspective.description, style = MaterialTheme.typography.bodyMedium)
+                            if (perspective.citedCommentIds.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { importId?.let { onNavigateToComments(it, perspective.citedCommentIds.first()) } }
+                                    ) {
+                                        Text("View evidence (${perspective.citedCommentIds.size})")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. NOTABLE INSIGHTS
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Notable Insights", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            if (synthesis.notableInsights.isEmpty()) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "No notable insights recorded.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            } else {
+                synthesis.notableInsights.forEach { insight ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(insight.insight, style = MaterialTheme.typography.bodyMedium)
+                            if (insight.citedCommentIds.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { importId?.let { onNavigateToComments(it, insight.citedCommentIds.first()) } }
+                                    ) {
+                                        Text("View evidence (${insight.citedCommentIds.size})")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 7. ACTIONABLE FOLLOW-UPS
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Actionable Follow-Ups", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            if (synthesis.actionableFollowUps.isEmpty()) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "No actionable follow-ups recorded.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            } else {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        synthesis.actionableFollowUps.forEachIndexed { index, followUp ->
+                            if (index > 0) {
+                                androidx.compose.material3.HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("${index + 1}. ${followUp.action}", style = MaterialTheme.typography.titleSmall)
+                                Text(followUp.rationale, style = MaterialTheme.typography.bodyMedium)
+                                if (followUp.citedCommentIds.isNotEmpty()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { importId?.let { onNavigateToComments(it, followUp.citedCommentIds.first()) } }
+                                        ) {
+                                            Text("View evidence (${followUp.citedCommentIds.size})")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    SummarySection(stringResource(R.string.analysis_usage)) {
-        MetricRow(
-            stringResource(R.string.analysis_input_tokens),
-            summary.usage.inputTokens?.toString() ?: stringResource(R.string.analysis_unknown)
-        )
-        MetricRow(
-            stringResource(R.string.analysis_output_tokens),
-            summary.usage.outputTokens?.toString() ?: stringResource(R.string.analysis_unknown)
-        )
-        MetricRow(
-            stringResource(R.string.analysis_known_cost),
-            summary.usage.costUsd?.let { String.format(Locale.US, "$%.6f", it) }
-                ?: stringResource(R.string.analysis_unknown)
-        )
+    // 8. SUPPORTING DATA
+    var showProcessingDetails by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text("Supporting Data", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                DistributionRows(
+                    title = stringResource(R.string.analysis_categories),
+                    emptyLabel = stringResource(R.string.analysis_no_results),
+                    rows = summary.categories.map { it.value to it.count }
+                )
+                androidx.compose.material3.HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                )
+                DistributionRows(
+                    title = stringResource(R.string.analysis_sentiment),
+                    emptyLabel = stringResource(R.string.analysis_no_results),
+                    rows = summary.sentiments.map { it.value to it.count }
+                )
+            }
+        }
+    }
+
+    // 9. TECHNICAL / PROCESSING DETAIL (Collapsed / Secondary section)
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        OutlinedButton(
+            onClick = { showProcessingDetails = !showProcessingDetails },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (showProcessingDetails) "Hide Processing Details" else "Processing Details")
+        }
+
+        if (showProcessingDetails) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(stringResource(R.string.analysis_processing), style = MaterialTheme.typography.titleSmall)
+                    MetricRow(stringResource(R.string.analysis_total), processing.totalComments.toString())
+                    MetricRow(stringResource(R.string.analysis_completed), processing.completed.toString())
+                    MetricRow(stringResource(R.string.analysis_locally_rejected), processing.locallyRejected.toString())
+                    MetricRow(stringResource(R.string.analysis_jev_rejected), processing.jevRejected.toString())
+                    MetricRow(stringResource(R.string.analysis_retrying), processing.retrying.toString())
+                    MetricRow(stringResource(R.string.analysis_failed), processing.permanentlyFailed.toString())
+
+                    androidx.compose.material3.HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+
+                    Text(stringResource(R.string.analysis_usage), style = MaterialTheme.typography.titleSmall)
+                    MetricRow(
+                        stringResource(R.string.analysis_input_tokens),
+                        summary.usage.inputTokens?.toString() ?: stringResource(R.string.analysis_unknown)
+                    )
+                    MetricRow(
+                        stringResource(R.string.analysis_output_tokens),
+                        summary.usage.outputTokens?.toString() ?: stringResource(R.string.analysis_unknown)
+                    )
+                    MetricRow(
+                        stringResource(R.string.analysis_known_cost),
+                        summary.usage.costUsd?.let { String.format(Locale.US, "$%.6f", it) }
+                            ?: stringResource(R.string.analysis_unknown)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -207,19 +559,6 @@ private fun DistributionRows(
         Text(emptyLabel, style = MaterialTheme.typography.bodyMedium)
     } else {
         rows.forEach { (value, count) -> MetricRow(value, count.toString()) }
-    }
-}
-
-@Composable
-private fun SummarySection(title: String, content: @Composable () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            content()
-        }
     }
 }
 

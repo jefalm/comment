@@ -27,6 +27,9 @@ class RoomYouTubeImportPageSink(
         database.withTransaction {
             val existing = database.importDao().getImportById(request.importId)
             if (existing == null) {
+                val activeConfig = database.processingConfigDao().getActiveConfig()
+                val targetVersion = activeConfig?.configVersion?.toInt()
+                    ?: ProcessingConfigBootstrap.CURRENT_CONFIG_VERSION.toInt()
                 database.importDao().insertImport(
                     ImportEntity(
                         importId = request.importId,
@@ -51,7 +54,8 @@ class RoomYouTubeImportPageSink(
                         publishedAtRaw = video.publishedAt,
                         viewCount = video.viewCount,
                         likeCount = video.likeCount,
-                        declaredCommentCount = video.commentCount
+                        declaredCommentCount = video.commentCount,
+                        sourceConfigVersion = targetVersion
                     )
                 )
             } else {

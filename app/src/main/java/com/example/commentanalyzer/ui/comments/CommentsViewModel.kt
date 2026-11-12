@@ -166,6 +166,20 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun focusComment(importId: String, commentId: String?) {
+        _uiState.update { state ->
+            state.copy(
+                selectedImportId = importId,
+                searchQuery = commentId ?: "",
+                relationship = CommentRelationshipFilter.ALL,
+                selectedCategories = emptySet(),
+                selectedSentiments = emptySet(),
+                stateFilter = CommentStateFilter.ALL,
+                hasRepliesOnly = false
+            )
+        }
+    }
+
     fun setSearchQuery(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
     }

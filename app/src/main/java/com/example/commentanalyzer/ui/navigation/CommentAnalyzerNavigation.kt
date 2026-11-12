@@ -44,7 +44,8 @@ fun CommentAnalyzerNavigation(
     commentsContent: @Composable () -> Unit,
     analysisViewModel: AnalysisViewModel,
     settingsContent: @Composable () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onNavigateToCommentEvidence: ((importId: String, commentId: String?) -> Unit)? = null
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -92,7 +93,19 @@ fun CommentAnalyzerNavigation(
                 commentsContent()
             }
             composable(AnalyzerDestination.ANALYSIS.route) {
-                AnalysisScreen(analysisViewModel)
+                AnalysisScreen(
+                    viewModel = analysisViewModel,
+                    onNavigateToComments = { importId, commentId ->
+                        onNavigateToCommentEvidence?.invoke(importId, commentId)
+                        navController.navigate(AnalyzerDestination.COMMENTS.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
             }
             composable(AnalyzerDestination.SETTINGS.route) {
                 settingsContent()

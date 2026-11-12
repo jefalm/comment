@@ -2,6 +2,7 @@ package com.example.commentanalyzer.ingestion.file
 
 import androidx.room.withTransaction
 import com.example.commentanalyzer.data.local.AppDatabase
+import com.example.commentanalyzer.data.local.ProcessingConfigBootstrap
 import com.example.commentanalyzer.data.local.entity.CommentEntity
 import com.example.commentanalyzer.data.local.entity.ImportEntity
 import com.example.commentanalyzer.data.local.entity.ImportStatus
@@ -36,6 +37,10 @@ class TxtExportImporter(
             val now = clock()
             database.withTransaction {
                 val previous = database.importDao().getImportById(request.importId)
+                val activeConfig = database.processingConfigDao().getActiveConfig()
+                val targetVersion = previous?.sourceConfigVersion
+                    ?: activeConfig?.configVersion?.toInt()
+                    ?: ProcessingConfigBootstrap.CURRENT_CONFIG_VERSION.toInt()
                 val import = ImportEntity(
                     importId = request.importId,
                     sourceType = SourceType.TXT_EXPORT,
@@ -64,7 +69,8 @@ class TxtExportImporter(
                     declaredReplyCount = export.statistics.declaredReplyCount,
                     totalLikes = export.statistics.totalLikes,
                     averageCommentsPerDay = export.statistics.avgCommentsPerDay,
-                    averageLikesPerComment = export.statistics.avgLikesPerComment
+                    averageLikesPerComment = export.statistics.avgLikesPerComment,
+                    sourceConfigVersion = targetVersion
                 )
                 database.importDao().insertImport(import)
                 val rows = export.comments.map { comment ->
@@ -96,7 +102,7 @@ class TxtExportImporter(
                         category = null,
                         sentiment = null,
                         relevanceScore = null,
-                        processingConfigVersion = 1,
+                        processingConfigVersion = targetVersion.toLong(),
                         leaseOwner = null,
                         leaseExpiresAt = null,
                         nextAttemptAt = null,

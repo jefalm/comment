@@ -116,11 +116,17 @@ class OpenRouterGlmSynthesisAdapterTest {
         val result = adapter().synthesize(context)
         val recorded = server.takeRequest()
         val sent = JsonParser.parseString(recorded.body!!.readUtf8()).asJsonObject
+        val messages = sent.getAsJsonArray("messages")
+        val userMessage = messages.map { it.asJsonObject }.first { it.get("role").asString == "user" }
+        val userContent = JsonParser.parseString(userMessage.get("content").asString).asJsonObject
 
         assertNull(result.error)
         assertNotNull(result.synthesis)
-        assertEquals(2, sent.getAsJsonObject("authoritativeContext").get("totalRelevantComments").asInt)
-        assertEquals(2.0, sent.getAsJsonArray("evidenceComments").size().toDouble(), 0.0)
+        assertEquals(2, userContent.getAsJsonObject("authoritativeContext").get("totalRelevantComments").asInt)
+        val evidenceArray = userContent.getAsJsonArray("evidenceComments")
+        assertEquals(2, evidenceArray.size())
+        val sentEvidenceIds = evidenceArray.map { it.asJsonObject.get("commentId").asString }
+        assertEquals(listOf("c-01", "c-02"), sentEvidenceIds)
     }
 
     @Test

@@ -47,6 +47,9 @@ class AnalysisWorker(
         ) {
             return Result.retry()
         }
+
+        container.synthesisOrchestrator.synthesizeImport(importId, configVersion)
+
         return Result.success(
             Data.Builder()
                 .putBoolean(

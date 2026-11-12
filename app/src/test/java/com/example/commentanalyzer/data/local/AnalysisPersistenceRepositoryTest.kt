@@ -551,8 +551,8 @@ class AnalysisPersistenceRepositoryTest {
             ProcessingState.READY_GLM
         }
         val commentStage = stage
-        database.commentDao().updateComment(comment("comment-1").copy(processingState = state, currentStage = commentStage))
-        database.commentDao().updateComment(comment("comment-2").copy(processingState = state, currentStage = commentStage))
+        database.commentDao().updateComments(listOf(comment("comment-1").copy(processingState = state, currentStage = commentStage)))
+        database.commentDao().updateComments(listOf(comment("comment-2").copy(processingState = state, currentStage = commentStage)))
         repository.createBatch(
             batch(stage, batchId),
             listOf(

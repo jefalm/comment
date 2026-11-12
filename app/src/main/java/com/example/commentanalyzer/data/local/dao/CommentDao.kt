@@ -102,37 +102,57 @@ interface CommentDao {
             COUNT(*) as totalComments,
             SUM(CASE WHEN processingState = 'LOCAL_REJECTED' THEN 1 ELSE 0 END) as locallyRejected,
             SUM(CASE WHEN processingState = 'JEV_REJECTED' THEN 1 ELSE 0 END) as jevRejected,
-            SUM(CASE WHEN processingState = 'COMPLETED' THEN 1 ELSE 0 END) as completed,
+            SUM(CASE WHEN processingState = 'COMPLETED' AND EXISTS (SELECT 1 FROM analysis_results r WHERE r.commentId = comments.localId AND r.processingConfigVersion = comments.processingConfigVersion AND r.stage = 'GLM_ANALYSIS') THEN 1 ELSE 0 END) as completed,
             SUM(CASE WHEN processingState = 'RETRY_WAIT' THEN 1 ELSE 0 END) as retrying,
             SUM(CASE WHEN processingState = 'FAILED_PERMANENT' THEN 1 ELSE 0 END) as permanentlyFailed,
-            SUM(CASE WHEN processingState NOT IN ('LOCAL_REJECTED', 'JEV_REJECTED', 'COMPLETED', 'FAILED_PERMANENT') THEN 1 ELSE 0 END) as inProgress
+            SUM(CASE WHEN processingState IN ('JEV_IN_PROGRESS', 'GLM_IN_PROGRESS') THEN 1 ELSE 0 END) as inProgress
         FROM comments
         WHERE importId = :importId AND processingConfigVersion = :configVersion
         """
     )
-    suspend fun getAnalysisProcessingCounts(importId: String, configVersion: Long): AnalysisProcessingCounts?
+    fun observeAnalysisProcessingCounts(importId: String, configVersion: Long): Flow<AnalysisProcessingCounts>
 
     @Query(
         """
         SELECT category as value, COUNT(*) as count
-        FROM comments
-        WHERE importId = :importId AND processingConfigVersion = :configVersion AND category IS NOT NULL
+        FROM comments c
+        WHERE c.importId = :importId
+            AND c.processingConfigVersion = :configVersion
+            AND c.processingState = 'COMPLETED'
+            AND c.category IS NOT NULL
+            AND c.category IN ('praise', 'criticism', 'feedback', 'question', 'spam', 'other')
+            AND EXISTS (
+                SELECT 1 FROM analysis_results r
+                WHERE r.commentId = c.localId
+                    AND r.processingConfigVersion = c.processingConfigVersion
+                    AND r.stage = 'GLM_ANALYSIS'
+            )
         GROUP BY category
         ORDER BY count DESC
         """
     )
-    suspend fun getCategoryDistribution(importId: String, configVersion: Long): List<AnalysisDistributionCount>
+    fun observeAnalysisCategoryCounts(importId: String, configVersion: Long): Flow<List<AnalysisDistributionCount>>
 
     @Query(
         """
         SELECT sentiment as value, COUNT(*) as count
-        FROM comments
-        WHERE importId = :importId AND processingConfigVersion = :configVersion AND sentiment IS NOT NULL
+        FROM comments c
+        WHERE c.importId = :importId
+            AND c.processingConfigVersion = :configVersion
+            AND c.processingState = 'COMPLETED'
+            AND c.sentiment IS NOT NULL
+            AND c.sentiment IN ('positive', 'negative', 'neutral')
+            AND EXISTS (
+                SELECT 1 FROM analysis_results r
+                WHERE r.commentId = c.localId
+                    AND r.processingConfigVersion = c.processingConfigVersion
+                    AND r.stage = 'GLM_ANALYSIS'
+            )
         GROUP BY sentiment
         ORDER BY count DESC
         """
     )
-    suspend fun getSentimentDistribution(importId: String, configVersion: Long): List<AnalysisDistributionCount>
+    fun observeAnalysisSentimentCounts(importId: String, configVersion: Long): Flow<List<AnalysisDistributionCount>>
 
     @Query("SELECT DISTINCT processingConfigVersion FROM comments WHERE importId = :importId ORDER BY processingConfigVersion DESC")
     fun observeAnalysisConfigVersions(importId: String): Flow<List<Long>>
@@ -166,7 +186,11 @@ interface CommentDao {
         """
         SELECT * FROM comments
         WHERE importId = :importId
-            AND (:query = '' OR originalText LIKE '%' || :query || '%' COLLATE NOCASE)
+            AND (
+                :query = ''
+                OR localId = :query
+                OR originalText LIKE '%' || :query || '%' COLLATE NOCASE
+            )
             AND (
                 :relationship = -1
                 OR (:relationship = 0 AND parentSourceCommentId IS NULL)
@@ -183,24 +207,56 @@ interface CommentDao {
             )
             AND (:hasRepliesOnly = 0 OR COALESCE(declaredReplyCount, 0) > 0 OR EXISTS (SELECT 1 FROM comments r WHERE r.parentSourceCommentId = comments.sourceCommentId))
         ORDER BY
-            -- Threads view ordering: root comments first by sort, then their replies chronologically
+            -- Threads view ordering:
+            -- 1) Thread anchor: if root, own publishedAtEpochMillis; if reply, parent's publishedAtEpochMillis (or own if orphan)
             CASE
                 WHEN :viewMode = 1 THEN
-                    CASE WHEN parentSourceCommentId IS NULL THEN publishedAtEpochMillis ELSE (SELECT p.publishedAtEpochMillis FROM comments p WHERE p.sourceCommentId = comments.parentSourceCommentId) END
+                    CASE
+                        WHEN parentSourceCommentId IS NULL THEN publishedAtEpochMillis
+                        ELSE COALESCE((SELECT p.publishedAtEpochMillis FROM comments p WHERE p.sourceCommentId = comments.parentSourceCommentId), publishedAtEpochMillis)
+                    END
                 ELSE 0
             END DESC,
+            -- 2) Thread identity: group root and its replies together by root sourceCommentId (or parentSourceCommentId)
             CASE
                 WHEN :viewMode = 1 THEN
-                    CASE WHEN parentSourceCommentId IS NULL THEN localId ELSE (SELECT p.localId FROM comments p WHERE p.sourceCommentId = comments.parentSourceCommentId) END
+                    COALESCE(parentSourceCommentId, sourceCommentId)
                 ELSE ''
             END ASC,
+            -- 3) Root precedes its replies (root has parentSourceCommentId IS NULL -> 0, replies -> 1)
             CASE
-                WHEN :viewMode = 2 AND :sort = 0 THEN publishedAtEpochMillis
-                WHEN :viewMode = 2 AND :sort = 1 THEN COALESCE(likeCount, 0)
-                WHEN :viewMode = 2 AND :sort = 2 THEN COALESCE(declaredReplyCount, 0)
-                WHEN :viewMode = 2 AND :sort = 3 THEN COALESCE(sentimentConfidence, 0.0)
-                WHEN :viewMode = 2 AND :sort = 4 THEN (SELECT COUNT(*) FROM comments c2 WHERE c2.importId = :importId AND c2.parentSourceCommentId = comments.sourceCommentId)
-                ELSE publishedAtEpochMillis
+                WHEN :viewMode = 1 THEN
+                    CASE WHEN parentSourceCommentId IS NULL THEN 0 ELSE 1 END
+                ELSE 0
+            END ASC,
+            -- 4) Replies chronological ascending within root
+            CASE
+                WHEN :viewMode = 1 AND parentSourceCommentId IS NOT NULL THEN publishedAtEpochMillis
+                ELSE 0
+            END ASC,
+            -- Categories view ordering: group size ordering (:sort = 4)
+            CASE
+                WHEN :viewMode = 2 AND :sort = 4 THEN
+                    (SELECT COUNT(*) FROM comments c_cat WHERE c_cat.importId = :importId AND c_cat.category IS NOT NULL AND c_cat.category = comments.category)
+                ELSE 0
+            END DESC,
+            -- Needs Attention ordering (:sort = 3)
+            -- Priority: criticism > feedback > question > others
+            CASE
+                WHEN :sort = 3 THEN
+                    CASE category
+                        WHEN 'criticism' THEN 1
+                        WHEN 'feedback' THEN 2
+                        WHEN 'question' THEN 3
+                        ELSE 4
+                    END
+                ELSE 0
+            END ASC,
+            -- General sort ordering
+            CASE
+                WHEN :sort = 1 THEN COALESCE(likeCount, 0)
+                WHEN :sort = 2 THEN COALESCE(declaredReplyCount, 0)
+                ELSE 0
             END DESC,
             publishedAtEpochMillis DESC,
             localId ASC

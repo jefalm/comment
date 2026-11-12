@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.example.commentanalyzer.data.local.entity.CommentSynthesisEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CommentSynthesisDao {
@@ -13,4 +14,7 @@ interface CommentSynthesisDao {
 
     @Query("SELECT * FROM comment_syntheses WHERE importId = :importId AND configVersion = :configVersion LIMIT 1")
     suspend fun getSynthesis(importId: String, configVersion: Long): CommentSynthesisEntity?
+
+    @Query("SELECT * FROM comment_syntheses WHERE importId = :importId AND configVersion = :configVersion LIMIT 1")
+    fun observeSynthesis(importId: String, configVersion: Long): Flow<CommentSynthesisEntity?>
 }

@@ -22,6 +22,7 @@ interface AppContainer {
 interface AnalysisAppContainer : AppContainer {
     val analysisOrchestrator: AnalysisOrchestrator
     val analysisReadRepository: AnalysisReadRepository
+    val synthesisOrchestrator: com.example.commentanalyzer.domain.synthesis.SynthesisOrchestrator
     suspend fun runAnalysis(importId: String, configVersion: Long): AnalysisRunResult
 }
 
@@ -37,6 +38,18 @@ class ProductionAppContainer internal constructor(
     }
     override val deepAnalyzer: DeepAnalyzer by lazy {
         OpenRouterGlmDeepAnalyzer(glmApiService, openRouterKeyProvider)
+    }
+    val synthesisDeepAnalyzer: com.example.commentanalyzer.domain.analysis.SynthesisDeepAnalyzer by lazy {
+        com.example.commentanalyzer.network.adapter.OpenRouterGlmSynthesisAdapter(
+            glmApiService = glmApiService,
+            tokenProvider = openRouterKeyProvider
+        )
+    }
+    override val synthesisOrchestrator: com.example.commentanalyzer.domain.synthesis.SynthesisOrchestrator by lazy {
+        com.example.commentanalyzer.domain.synthesis.SynthesisOrchestrator(
+            database = database,
+            synthesisAnalyzer = synthesisDeepAnalyzer
+        )
     }
     val analysisPersistenceRepository: AnalysisPersistenceRepository by lazy {
         AnalysisPersistenceRepository(database)
@@ -59,7 +72,8 @@ class ProductionAppContainer internal constructor(
         AnalysisReadRepository(
             commentDao = database.commentDao(),
             importDao = database.importDao(),
-            processingBatchDao = database.processingBatchDao()
+            processingBatchDao = database.processingBatchDao(),
+            commentSynthesisDao = database.commentSynthesisDao()
         )
     }
 

@@ -237,17 +237,40 @@ class ProductionAnalysisIntegrationTest {
         override suspend fun getDecisions(request: JevRequest): Response<JevDecisionResponse> {
             calls++
             httpError?.let { return Response.error(it, ResponseBody.create(null, "")) }
-            val questionKey = request.questions.keys.single()
+            val isV2 = request.questions.containsKey("comment_quality_gate")
+            val answers = if (isV2) {
+                mapOf(
+                    "comment_quality_gate" to com.example.commentanalyzer.network.dto.jev.JevAnswerValue(
+                        type = "noul",
+                        noul = probability
+                    ),
+                    "comment_category" to com.example.commentanalyzer.network.dto.jev.JevAnswerValue(
+                        type = "choice",
+                        choice = "feedback",
+                        confidence = 0.85
+                    ),
+                    "comment_sentiment" to com.example.commentanalyzer.network.dto.jev.JevAnswerValue(
+                        type = "choice",
+                        choice = "positive",
+                        confidence = 0.92
+                    )
+                )
+            } else {
+                val questionKey = request.questions.keys.single()
+                mapOf(
+                    questionKey to com.example.commentanalyzer.network.dto.jev.JevAnswerValue(
+                        type = "noul",
+                        noul = probability
+                    )
+                )
+            }
             return Response.success(
                 JevDecisionResponse(
                     id = "test-request",
                     model = request.model,
                     provider = "test",
                     usage = JevUsage(inputTokens = 10, outputTokens = 2, costUsd = 0.0),
-                    answers = mapOf(questionKey to com.example.commentanalyzer.network.dto.jev.JevAnswerValue(
-                        type = "noul",
-                        noul = probability
-                    ))
+                    answers = answers
                 )
             )
         }

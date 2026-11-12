@@ -39,7 +39,8 @@ class AnalysisReadRepositoryTest {
         repository = AnalysisReadRepository(
             database.commentDao(),
             database.importDao(),
-            database.processingBatchDao()
+            database.processingBatchDao(),
+            database.commentSynthesisDao()
         )
     }
 
@@ -138,14 +139,46 @@ class AnalysisReadRepositoryTest {
 
     @Test
     fun persistedInProgressStatesAreObservableForBackgroundAnalysis() = runBlocking {
-        database.commentDao().insertComment(
-            comment("jev-running", "import-a", 7, ProcessingState.JEV_IN_PROGRESS)
-                .copy(currentStage = ProcessingStage.JEV_GATE)
+        database.commentDao().insertComments(
+            listOf(
+                comment("jev-running", "import-a", 7, ProcessingState.JEV_IN_PROGRESS)
+                    .copy(currentStage = ProcessingStage.JEV_GATE),
+                comment("glm-running", "import-a", 7, ProcessingState.GLM_IN_PROGRESS)
+                    .copy(currentStage = ProcessingStage.GLM_ANALYSIS),
+                comment("imported-eligible", "import-a", 7, ProcessingState.IMPORTED),
+                comment("ready-jev", "import-a", 7, ProcessingState.READY_JEV),
+                comment("ready-glm", "import-a", 7, ProcessingState.READY_GLM),
+                comment("manual-review", "import-a", 7, ProcessingState.MANUAL_REVIEW),
+                comment("retry-wait", "import-a", 7, ProcessingState.RETRY_WAIT),
+                comment("local-rejected", "import-a", 7, ProcessingState.LOCAL_REJECTED),
+                comment("jev-rejected", "import-a", 7, ProcessingState.JEV_REJECTED),
+                comment("failed-perm", "import-a", 7, ProcessingState.FAILED_PERMANENT),
+                comment("completed-valid", "import-a", 7, ProcessingState.COMPLETED, "feedback", "positive"),
+                comment("cancelled", "import-a", 7, ProcessingState.CANCELLED)
+            )
+        )
+        database.analysisResultDao().insertResult(
+            result("glm-completed", "completed-valid", 7, ResultStage.GLM_ANALYSIS)
         )
 
         val summary = repository.observeSummary("import-a", 7).first()
 
-        assertEquals(1L, summary.processing.inProgress)
+        // 1 & 2: JEV_IN_PROGRESS (1) + GLM_IN_PROGRESS (1) = 2 inProgress
+        // 3: READY_JEV does NOT count as inProgress
+        // 4: READY_GLM does NOT count as inProgress
+        // 5: IMPORTED does NOT count as inProgress
+        // 6: MANUAL_REVIEW does NOT count as inProgress
+        assertEquals(2L, summary.processing.inProgress)
+
+        // 7: RETRY_WAIT increments retrying but NOT inProgress
+        assertEquals(1L, summary.processing.retrying)
+
+        // 8: existing completed/rejected/failed counts remain correct
+        assertEquals(12L, summary.processing.totalComments)
+        assertEquals(1L, summary.processing.completed)
+        assertEquals(1L, summary.processing.locallyRejected)
+        assertEquals(1L, summary.processing.jevRejected)
+        assertEquals(1L, summary.processing.permanentlyFailed)
     }
 
     private fun comment(
