@@ -18,6 +18,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.io.IOException
+import java.security.MessageDigest
 
 class OpenRouterGlmDeepAnalyzer(
     private val glmApiService: GlmApiService,
@@ -151,13 +152,55 @@ class OpenRouterGlmDeepAnalyzer(
         }
         val results = parsed.results.orEmpty()
         val returnedIds = results.map { it.commentId }
-        if (returnedIds.toSet().size != returnedIds.size) {
-            return result(batchId, requestedModel, response, emptyList(), "GLM_DUPLICATE_RESULT_IDS")
+        val returnedIdsSet = returnedIds.toSet()
+        val duplicateCount = returnedIds.size - returnedIdsSet.size
+        if (duplicateCount > 0) {
+            val diagnostics = computeMismatchDiagnostics(requestedIds, returnedIds)
+            val errorSummary = "expectedCount=${diagnostics.expectedCount}, returnedCount=${diagnostics.returnedCount}, missingCount=${diagnostics.missingCount}, extraCount=${diagnostics.extraCount}, duplicateCount=${diagnostics.duplicateCount}, expectedSha=${diagnostics.expectedIdsSha256}, returnedSha=${diagnostics.returnedIdsSha256}"
+            return result(batchId, requestedModel, response, emptyList(), "GLM_DUPLICATE_RESULT_IDS", errorSummary = errorSummary)
         }
-        if (returnedIds.toSet() != requestedIds) {
-            return result(batchId, requestedModel, response, emptyList(), "GLM_RESULT_ID_SET_MISMATCH")
+        if (returnedIdsSet != requestedIds) {
+            val diagnostics = computeMismatchDiagnostics(requestedIds, returnedIds)
+            val errorSummary = "expectedCount=${diagnostics.expectedCount}, returnedCount=${diagnostics.returnedCount}, missingCount=${diagnostics.missingCount}, extraCount=${diagnostics.extraCount}, duplicateCount=${diagnostics.duplicateCount}, expectedSha=${diagnostics.expectedIdsSha256}, returnedSha=${diagnostics.returnedIdsSha256}"
+            return result(batchId, requestedModel, response, emptyList(), "GLM_RESULT_ID_SET_MISMATCH", errorSummary = errorSummary)
         }
         return result(batchId, requestedModel, response, results, null)
+    }
+
+    private data class MismatchDiagnostics(
+        val expectedCount: Int,
+        val returnedCount: Int,
+        val missingCount: Int,
+        val extraCount: Int,
+        val duplicateCount: Int,
+        val expectedIdsSha256: String,
+        val returnedIdsSha256: String
+    )
+
+    private fun computeMismatchDiagnostics(
+        requestedIds: Set<String>,
+        returnedIds: List<String>
+    ): MismatchDiagnostics {
+        val returnedIdsSet = returnedIds.toSet()
+        val missing = requestedIds - returnedIdsSet
+        val extra = returnedIdsSet - requestedIds
+        val duplicateCount = returnedIds.size - returnedIdsSet.size
+        val expectedSorted = requestedIds.sorted().joinToString("\n")
+        val returnedSorted = returnedIds.sorted().joinToString("\n")
+        return MismatchDiagnostics(
+            expectedCount = requestedIds.size,
+            returnedCount = returnedIds.size,
+            missingCount = missing.size,
+            extraCount = extra.size,
+            duplicateCount = duplicateCount,
+            expectedIdsSha256 = sha256Hex(expectedSorted),
+            returnedIdsSha256 = sha256Hex(returnedSorted)
+        )
+    }
+
+    private fun sha256Hex(value: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
     }
 
     private fun validateContent(content: String): ValidationResult {
@@ -220,7 +263,8 @@ class OpenRouterGlmDeepAnalyzer(
         response: GlmResponse?,
         results: List<AnalysisItemResult>,
         error: String?,
-        retryAfterSeconds: Long? = null
+        retryAfterSeconds: Long? = null,
+        errorSummary: String? = null
     ): AnalysisBatchResult = AnalysisBatchResult(
         batchId = batchId,
         modelResolved = response?.model?.takeIf { it.isNotBlank() } ?: requestedModel,
@@ -232,7 +276,8 @@ class OpenRouterGlmDeepAnalyzer(
         error = error,
         modelRequested = requestedModel,
         generationId = response?.id,
-        retryAfterSeconds = retryAfterSeconds
+        retryAfterSeconds = retryAfterSeconds,
+        errorSummary = errorSummary
     )
 
     private data class ValidationResult(

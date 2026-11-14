@@ -324,7 +324,7 @@ class AnalysisOrchestrator(
                 val netTime = clock() - startNet
                 if (response.error != null) {
                     telemetryRecorder?.recordEvent(TelemetryEvent.Failure(1))
-                    recordFailure(batch.batchId, response.error, response.retryAfterSeconds)
+                    recordFailure(batch.batchId, response.error, response.retryAfterSeconds, errorSummary = response.errorSummary)
                 } else {
                     telemetryRecorder?.recordEvent(
                         TelemetryEvent.GlmBatch(
@@ -348,7 +348,12 @@ class AnalysisOrchestrator(
         return true
     }
 
-    private suspend fun recordFailure(batchId: String, rawError: String, serverRetryAfterSeconds: Long? = null) {
+    private suspend fun recordFailure(
+        batchId: String,
+        rawError: String,
+        serverRetryAfterSeconds: Long? = null,
+        errorSummary: String? = null
+    ) {
         val errorCode = rawError.substringBefore(':').trim().uppercase().takeIf {
             ERROR_CODE.matches(it)
         } ?: "ADAPTER_ERROR"
@@ -373,7 +378,8 @@ class AnalysisOrchestrator(
             batchId = batchId,
             errorCode = errorCode,
             retryable = retryable,
-            nextAttemptAt = (clock() + decision.delayMillis).takeIf { retryable }
+            nextAttemptAt = (clock() + decision.delayMillis).takeIf { retryable },
+            errorSummary = errorSummary
         )
     }
 

@@ -125,28 +125,28 @@ class AnalysisPersistenceRepository(
                 it.processingConfigVersion == configVersion &&
                 it.currentStage == stage &&
                 it.processingState == expectedState
-        })
+        }) { "Comments are not eligible for permanent failure marking" }
         val now = clock()
-        check(database.commentDao().updateComments(comments.map {
+        val updatedComments = comments.map {
             it.copy(
                 processingState = ProcessingState.FAILED_PERMANENT,
+                nextAttemptAt = null,
+                leaseOwner = null,
+                leaseExpiresAt = null,
                 lastErrorCode = errorCode,
                 lastErrorSummary = errorCode,
                 updatedAt = now
             )
-        }) == comments.size)
+        }
+        check(database.commentDao().updateComments(updatedComments) == updatedComments.size)
     }
 
     private suspend fun insertBatch(
         batch: ProcessingBatchEntity,
         items: List<ProcessingBatchItemEntity>
     ) {
-        require(batch.batchId.isNotBlank())
-        require(!batch.importId.isNullOrBlank())
-        require(batch.stage == ProcessingStage.JEV_GATE || batch.stage == ProcessingStage.GLM_ANALYSIS)
-        require(batch.status == BatchStatus.PLANNED)
-        require(batch.attemptCount == 0)
-        require(batch.modelRequested.matches(MODEL_ID))
+        require(batch.batchId.isNotBlank() && batch.requestFingerprintSha256.isNotBlank())
+        require(batch.requestItemCount == items.size)
         requireNoCredentialMaterial(batch.modelRequested)
         batch.modelResolved?.let(::requireNoCredentialMaterial)
         batch.provider?.let(::requireNoCredentialMaterial)
@@ -423,7 +423,8 @@ class AnalysisPersistenceRepository(
         batchId: String,
         errorCode: String,
         retryable: Boolean,
-        nextAttemptAt: Long? = null
+        nextAttemptAt: Long? = null,
+        errorSummary: String? = null
     ) = database.withTransaction {
         require(errorCode.matches(ERROR_CODE))
         val dao = database.processingBatchDao()
@@ -433,7 +434,7 @@ class AnalysisPersistenceRepository(
         check(items.isNotEmpty() && items.all { it.status == BatchItemStatus.SENT }) {
             "Batch items are not all in flight"
         }
-        transitionBatchFailure(batch, items, errorCode, retryable, nextAttemptAt)
+        transitionBatchFailure(batch, items, errorCode, retryable, nextAttemptAt, errorSummary)
     }
 
     private suspend fun transitionBatchFailure(
@@ -441,7 +442,8 @@ class AnalysisPersistenceRepository(
         items: List<ProcessingBatchItemEntity>,
         errorCode: String,
         retryable: Boolean,
-        nextAttemptAt: Long?
+        nextAttemptAt: Long?,
+        errorSummary: String? = null
     ) {
         require(errorCode.matches(ERROR_CODE))
         check(items.isNotEmpty() && items.all { it.status == BatchItemStatus.SENT })
@@ -455,6 +457,7 @@ class AnalysisPersistenceRepository(
         } else {
             ProcessingState.GLM_IN_PROGRESS
         }
+        val summaryToPersist = errorSummary ?: errorCode
         check(comments.size == items.size && comments.all { it.processingState == inProgressState })
         check(database.commentDao().updateComments(comments.map {
             it.copy(
@@ -463,7 +466,7 @@ class AnalysisPersistenceRepository(
                 leaseOwner = null,
                 leaseExpiresAt = null,
                 lastErrorCode = errorCode,
-                lastErrorSummary = errorCode,
+                lastErrorSummary = summaryToPersist,
                 updatedAt = now
             )
         }) == comments.size)
@@ -476,7 +479,7 @@ class AnalysisPersistenceRepository(
                 leaseOwner = null,
                 leaseExpiresAt = null,
                 lastErrorCode = errorCode,
-                lastErrorSummary = errorCode
+                lastErrorSummary = summaryToPersist
             )
         ) == 1)
         check(dao.updateBatchItems(items.map {

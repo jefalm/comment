@@ -140,16 +140,50 @@ class OpenRouterGlmDeepAnalyzerTest {
         assertFailure(results("c1", "c2", confidence = "1.1"), "GLM_SCHEMA_MISMATCH")
 
     @Test
-    fun duplicateReturnedIdsRejectWholeBatch() =
-        assertFailure(results("c1", "c1"), "GLM_DUPLICATE_RESULT_IDS")
+    fun duplicateReturnedIdsRejectWholeBatch() = runBlocking {
+        server.enqueue(response(results("c1", "c1")))
+        val result = analyzer().analyze(inputs(), config())
+        assertEquals("GLM_DUPLICATE_RESULT_IDS", result.error)
+        assertNotNull(result.errorSummary)
+        val summary = requireNotNull(result.errorSummary)
+        assertTrue(summary.contains("expectedCount=2"))
+        assertTrue(summary.contains("returnedCount=2"))
+        assertTrue(summary.contains("duplicateCount=1"))
+        assertTrue(summary.contains("expectedSha="))
+        assertTrue(summary.contains("returnedSha="))
+        assertTrue(result.results.isEmpty())
+    }
 
     @Test
-    fun missingRequestedIdRejectsWholeBatch() =
-        assertFailure(results("c1"), "GLM_RESULT_ID_SET_MISMATCH")
+    fun missingRequestedIdRejectsWholeBatch() = runBlocking {
+        server.enqueue(response(results("c1")))
+        val result = analyzer().analyze(inputs(), config())
+        assertEquals("GLM_RESULT_ID_SET_MISMATCH", result.error)
+        assertNotNull(result.errorSummary)
+        val summary = requireNotNull(result.errorSummary)
+        assertTrue(summary.contains("expectedCount=2"))
+        assertTrue(summary.contains("returnedCount=1"))
+        assertTrue(summary.contains("missingCount=1"))
+        assertTrue(summary.contains("expectedSha="))
+        assertTrue(summary.contains("returnedSha="))
+        assertTrue(result.results.isEmpty())
+    }
 
     @Test
-    fun unexpectedReturnedIdRejectsWholeBatch() =
-        assertFailure(results("c1", "other"), "GLM_RESULT_ID_SET_MISMATCH")
+    fun unexpectedReturnedIdRejectsWholeBatch() = runBlocking {
+        server.enqueue(response(results("c1", "other")))
+        val result = analyzer().analyze(inputs(), config())
+        assertEquals("GLM_RESULT_ID_SET_MISMATCH", result.error)
+        assertNotNull(result.errorSummary)
+        val summary = requireNotNull(result.errorSummary)
+        assertTrue(summary.contains("expectedCount=2"))
+        assertTrue(summary.contains("returnedCount=2"))
+        assertTrue(summary.contains("missingCount=1"))
+        assertTrue(summary.contains("extraCount=1"))
+        assertTrue(summary.contains("expectedSha="))
+        assertTrue(summary.contains("returnedSha="))
+        assertTrue(result.results.isEmpty())
+    }
 
     @Test
     fun unauthorizedResponseIsRejected() = assertHttpFailure(401, "HTTP_401_UNAUTHORIZED")
