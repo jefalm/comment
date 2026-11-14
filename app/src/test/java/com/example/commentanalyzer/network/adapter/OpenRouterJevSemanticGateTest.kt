@@ -194,6 +194,25 @@ class OpenRouterJevSemanticGateTest {
     }
 
     @Test
+    fun testHttp429RateLimitWithRetryAfterHeader() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(429)
+                .setHeader("Retry-After", "120")
+                .setBody("Rate limit exceeded")
+        )
+
+        val gate = createGate()
+        val inputs = listOf(GateInput("c1", "Test comment", null, null))
+        val config = GateConfig(1L, "typesafe/jev-1.14", 0.3, 0.7)
+
+        val result = gate.screen(inputs, config)
+
+        assertEquals("HTTP_429_RATE_LIMIT", result.error)
+        assertEquals(120L, result.retryAfterSeconds)
+    }
+
+    @Test
     fun testHttp5xxServerError() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(503).setBody("Service Unavailable"))
 

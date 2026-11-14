@@ -13,6 +13,7 @@ import com.example.commentanalyzer.network.adapter.OpenRouterGlmDeepAnalyzer
 import com.example.commentanalyzer.network.adapter.OpenRouterJevSemanticGate
 import com.example.commentanalyzer.network.glm.GlmApiService
 import com.example.commentanalyzer.network.jev.JevApiService
+import okhttp3.OkHttpClient
 
 interface AppContainer {
     val semanticGate: SemanticGate
@@ -30,8 +31,9 @@ class ProductionAppContainer internal constructor(
     private val database: AppDatabase,
     private val openRouterKeyProvider: () -> String?,
     private val remoteProcessingConsentProvider: () -> Boolean,
-    jevApiService: JevApiService = JevApiService.create(tokenProvider = openRouterKeyProvider),
-    glmApiService: GlmApiService = GlmApiService.create(tokenProvider = openRouterKeyProvider)
+    private val openRouterClient: OkHttpClient = OkHttpClient.Builder().build(),
+    jevApiService: JevApiService = JevApiService.create(tokenProvider = openRouterKeyProvider, okHttpClient = openRouterClient),
+    glmApiService: GlmApiService = GlmApiService.create(tokenProvider = openRouterKeyProvider, okHttpClient = openRouterClient)
 ) : AnalysisAppContainer {
     override val semanticGate: SemanticGate by lazy {
         OpenRouterJevSemanticGate(jevApiService, openRouterKeyProvider)

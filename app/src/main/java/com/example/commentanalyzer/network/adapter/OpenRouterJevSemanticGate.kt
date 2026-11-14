@@ -75,7 +75,9 @@ class OpenRouterJevSemanticGate(
         val totalInputTokens = completed.mapNotNull { it.inputTokens }.sum()
         val totalOutputTokens = completed.mapNotNull { it.outputTokens }.sum()
         val totalCost = completed.mapNotNull { it.costUsd }.sum()
-        val firstError = completed.firstOrNull { it.error != null }?.error
+        val firstFailure = completed.firstOrNull { it.error != null }
+        val firstError = firstFailure?.error
+        val firstRetryAfter = firstFailure?.retryAfterSeconds
         val results = completed.mapNotNull { it.result }
 
         return GateBatchResult(
@@ -86,7 +88,8 @@ class OpenRouterJevSemanticGate(
             outputTokens = totalOutputTokens.takeIf { it > 0 },
             costUsd = totalCost.takeIf { it > 0.0 },
             results = if (firstError == null) results else emptyList(),
-            error = firstError
+            error = firstError,
+            retryAfterSeconds = firstRetryAfter
         )
     }
 
@@ -140,13 +143,14 @@ class OpenRouterJevSemanticGate(
             val response = jevApiService.getDecisions(request)
             if (!response.isSuccessful) {
                 val code = response.code()
+                val retryAfter = response.headers().get("Retry-After")?.toLongOrNull()
                 val error = when (code) {
                     401 -> "HTTP_401_UNAUTHORIZED"
                     429 -> "HTTP_429_RATE_LIMIT"
                     in 500..599 -> "HTTP_SERVER_ERROR_$code"
                     else -> "HTTP_ERROR_$code"
                 }
-                return JevCallOutcome(error = error)
+                return JevCallOutcome(error = error, retryAfterSeconds = retryAfter)
             }
 
             val body = response.body() ?: return JevCallOutcome(error = "JEV_NULL_RESPONSE")
@@ -278,7 +282,8 @@ class OpenRouterJevSemanticGate(
         val inputTokens: Long? = null,
         val outputTokens: Long? = null,
         val costUsd: Double? = null,
-        val error: String? = null
+        val error: String? = null,
+        val retryAfterSeconds: Long? = null
     )
 
     companion object {

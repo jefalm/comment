@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import okhttp3.ResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import retrofit2.Response
@@ -92,6 +93,42 @@ class OpenRouterJevSemanticGateConcurrencyTest {
         assertEquals(7, calls.get())
         assertEquals("HTTP_429_RATE_LIMIT", result.error)
         assertTrue(result.results.isEmpty())
+    }
+
+    @Test
+    fun retryAfterComesFromSameFailureAsErrorWhenMultipleFailDifferently() = runBlocking {
+        val service = object : JevApiService {
+            override suspend fun getDecisions(
+                request: com.example.commentanalyzer.network.dto.jev.JevRequest
+            ): Response<JevDecisionResponse> {
+                return if (request.state == "text-0") {
+                    Response.error(
+                        400,
+                        ResponseBody.create(null, "bad request")
+                    )
+                } else {
+                    Response.error(
+                        ResponseBody.create(null, "rate limited"),
+                        okhttp3.Response.Builder()
+                            .request(okhttp3.Request.Builder().url("https://example.com").build())
+                            .protocol(okhttp3.Protocol.HTTP_1_1)
+                            .code(429)
+                            .message("Too Many Requests")
+                            .header("Retry-After", "120")
+                            .build()
+                    )
+                }
+            }
+        }
+        val inputs = listOf(
+            GateInput("comment-0", "text-0", null, null),
+            GateInput("comment-1", "text-1", null, null)
+        )
+
+        val result = gate(service).screen(inputs, gateConfig())
+
+        assertEquals("HTTP_ERROR_400", result.error)
+        assertNull(result.retryAfterSeconds)
     }
 
     @Test

@@ -28,5 +28,6 @@ data class AnalysisBatchResult(
     val results: List<AnalysisItemResult>,
     val error: String?,
     val modelRequested: String? = null,
-    val generationId: String? = null
+    val generationId: String? = null,
+    val retryAfterSeconds: Long? = null
 )

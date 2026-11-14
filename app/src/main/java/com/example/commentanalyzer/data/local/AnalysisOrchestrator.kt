@@ -277,7 +277,7 @@ class AnalysisOrchestrator(
                 val netTime = clock() - startNet
                 if (response.error != null) {
                     telemetryRecorder?.recordEvent(TelemetryEvent.Failure(1))
-                    recordFailure(batch.batchId, response.error)
+                    recordFailure(batch.batchId, response.error, response.retryAfterSeconds)
                 } else {
                     val rejected = response.results.count { it.probability < config.jevRejectThreshold }
                     val passed = response.results.count { it.probability >= config.jevRejectThreshold }
@@ -324,7 +324,7 @@ class AnalysisOrchestrator(
                 val netTime = clock() - startNet
                 if (response.error != null) {
                     telemetryRecorder?.recordEvent(TelemetryEvent.Failure(1))
-                    recordFailure(batch.batchId, response.error)
+                    recordFailure(batch.batchId, response.error, response.retryAfterSeconds)
                 } else {
                     telemetryRecorder?.recordEvent(
                         TelemetryEvent.GlmBatch(
@@ -348,7 +348,7 @@ class AnalysisOrchestrator(
         return true
     }
 
-    private suspend fun recordFailure(batchId: String, rawError: String) {
+    private suspend fun recordFailure(batchId: String, rawError: String, serverRetryAfterSeconds: Long? = null) {
         val errorCode = rawError.substringBefore(':').trim().uppercase().takeIf {
             ERROR_CODE.matches(it)
         } ?: "ADAPTER_ERROR"
@@ -364,7 +364,7 @@ class AnalysisOrchestrator(
                 errorCode.substringAfterLast('_').toIntOrNull() ?: 400
             else -> 400
         }
-        val decision = RetryPolicy.evaluate(statusCode, batch.attemptCount, random = random)
+        val decision = RetryPolicy.evaluate(statusCode, batch.attemptCount, serverRetryAfterSeconds = serverRetryAfterSeconds, random = random)
         val retryable = decision.disposition == RetryDisposition.RETRYABLE
         if (retryable) {
             telemetryRecorder?.recordEvent(TelemetryEvent.Retry(1))

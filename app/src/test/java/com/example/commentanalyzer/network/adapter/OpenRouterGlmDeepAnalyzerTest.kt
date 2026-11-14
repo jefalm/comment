@@ -158,6 +158,14 @@ class OpenRouterGlmDeepAnalyzerTest {
     fun rateLimitResponseIsRejected() = assertHttpFailure(429, "HTTP_429_RATE_LIMIT")
 
     @Test
+    fun rateLimitResponseWithRetryAfterHeaderCaptured() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "60"))
+        val result = analyzer().analyze(inputs(), config())
+        assertEquals("HTTP_429_RATE_LIMIT", result.error)
+        assertEquals(60L, result.retryAfterSeconds)
+    }
+
+    @Test
     fun serverErrorResponseIsRejected() = assertHttpFailure(503, "HTTP_SERVER_ERROR_503")
 
     private fun assertFailure(content: String, expectedError: String = "GLM_MALFORMED_JSON") = runBlocking {

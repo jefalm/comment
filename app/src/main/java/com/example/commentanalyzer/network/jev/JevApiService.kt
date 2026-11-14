@@ -21,9 +21,10 @@ interface JevApiService {
         fun create(
             baseUrl: String = "https://openrouter.ai/",
             tokenProvider: () -> String?,
-            attributionConfig: OpenRouterAttributionConfig = OpenRouterAttributionConfig()
+            attributionConfig: OpenRouterAttributionConfig = OpenRouterAttributionConfig(),
+            okHttpClient: OkHttpClient? = null
         ): JevApiService {
-            val client = OkHttpClient.Builder()
+            val client = (okHttpClient?.newBuilder() ?: OkHttpClient.Builder())
                 .addInterceptor(OpenRouterHeaderInterceptor(tokenProvider, attributionConfig))
                 .build()
 

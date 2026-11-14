@@ -41,5 +41,6 @@ data class GateBatchResult(
     val outputTokens: Long?,
     val costUsd: Double?,
     val results: List<GateItemResult>,
-    val error: String?
+    val error: String?,
+    val retryAfterSeconds: Long? = null
 )

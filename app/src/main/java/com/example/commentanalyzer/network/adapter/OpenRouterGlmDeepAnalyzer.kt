@@ -84,13 +84,14 @@ class OpenRouterGlmDeepAnalyzer(
         }
         if (!response.isSuccessful) {
             val code = response.code()
+            val retryAfter = response.headers().get("Retry-After")?.toLongOrNull()
             val error = when (code) {
                 401 -> "HTTP_401_UNAUTHORIZED"
                 429 -> "HTTP_429_RATE_LIMIT"
                 in 500..599 -> "HTTP_SERVER_ERROR_$code"
                 else -> "HTTP_ERROR_$code"
             }
-            return result(batchId, requestedModel, null, emptyList(), error)
+            return result(batchId, requestedModel, null, emptyList(), error, retryAfterSeconds = retryAfter)
         }
 
         val responseBody = response.body()
@@ -218,7 +219,8 @@ class OpenRouterGlmDeepAnalyzer(
         requestedModel: String,
         response: GlmResponse?,
         results: List<AnalysisItemResult>,
-        error: String?
+        error: String?,
+        retryAfterSeconds: Long? = null
     ): AnalysisBatchResult = AnalysisBatchResult(
         batchId = batchId,
         modelResolved = response?.model?.takeIf { it.isNotBlank() } ?: requestedModel,
@@ -229,7 +231,8 @@ class OpenRouterGlmDeepAnalyzer(
         results = results,
         error = error,
         modelRequested = requestedModel,
-        generationId = response?.id
+        generationId = response?.id,
+        retryAfterSeconds = retryAfterSeconds
     )
 
     private data class ValidationResult(
