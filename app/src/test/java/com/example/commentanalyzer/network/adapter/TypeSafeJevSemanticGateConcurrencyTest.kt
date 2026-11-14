@@ -55,7 +55,7 @@ class TypeSafeJevSemanticGateConcurrencyTest {
 
         val result = gate(service).screen(inputs, gateConfig())
 
-        assertEquals(4, maxActive.get())
+        assertEquals(5, maxActive.get())
         assertTrue(maxActive.get() <= TypeSafeJevSemanticGate.MAX_CONCURRENT_JEV_REQUESTS)
         assertEquals(inputs.map { it.commentId }, result.results.map { it.commentId })
         assertEquals((0 until inputs.size).map { it / 20.0 }, result.results.map { it.probability })

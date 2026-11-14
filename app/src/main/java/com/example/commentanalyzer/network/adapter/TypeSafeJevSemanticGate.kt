@@ -287,7 +287,7 @@ class TypeSafeJevSemanticGate(
     )
 
     companion object {
-        const val MAX_CONCURRENT_JEV_REQUESTS = 4
+        const val MAX_CONCURRENT_JEV_REQUESTS = 5
         const val KEY_QUALITY_GATE = "comment_quality_gate"
         const val KEY_CATEGORY = "comment_category"
         const val KEY_SENTIMENT = "comment_sentiment"
