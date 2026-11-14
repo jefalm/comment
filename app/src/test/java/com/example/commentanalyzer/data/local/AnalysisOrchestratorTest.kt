@@ -122,16 +122,16 @@ class AnalysisOrchestratorTest {
 
     @Test
     fun localRejectionNeverReachesJev() = runBlocking {
-        addComment(comment("short", "hi"))
+        addComment(comment("trash", "aaaaaaaaaa"))
 
         orchestrator().run(IMPORT_ID, config())
 
         assertEquals(0, gateCalls)
         assertEquals(0, glmCalls)
-        assertEquals(ProcessingState.LOCAL_REJECTED, database.commentDao().getCommentById("short")?.processingState)
+        assertEquals(ProcessingState.LOCAL_REJECTED, database.commentDao().getCommentById("trash")?.processingState)
         assertEquals(
             listOf(ResultStage.LOCAL_FILTER),
-            database.analysisResultDao().getResultsForComment("short", CONFIG_VERSION).map { it.stage }
+            database.analysisResultDao().getResultsForComment("trash", CONFIG_VERSION).map { it.stage }
         )
     }
 

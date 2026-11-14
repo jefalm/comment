@@ -17,7 +17,9 @@ class PipelineLogicTest {
     @Test
     fun testLocalFilterOutcomes() {
         assertEquals(FilterOutcome.REJECT, LocalFilter.evaluate("").outcome)
-        assertEquals(FilterOutcome.REJECT, LocalFilter.evaluate("hi").outcome)
+        assertEquals(FilterOutcome.PASS, LocalFilter.evaluate("hi").outcome)
+        assertEquals(FilterOutcome.PASS, LocalFilter.evaluate("ok").outcome)
+        assertEquals(FilterOutcome.PASS, LocalFilter.evaluate("?").outcome)
         assertEquals(FilterOutcome.REJECT, LocalFilter.evaluate("aaaaaaaaaaaa").outcome)
         assertEquals(FilterOutcome.PASS, LocalFilter.evaluate("This is a great video!").outcome)
         assertEquals(FilterOutcome.REVIEW, LocalFilter.evaluate("Check out https://a.com https://b.com https://c.com https://d.com").outcome)

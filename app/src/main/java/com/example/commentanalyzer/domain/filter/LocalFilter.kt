@@ -17,10 +17,6 @@ object LocalFilter {
             rules.add("RULE_EMPTY_TEXT")
             return FilterResult(FilterOutcome.REJECT, rules)
         }
-        if (normalizedText.length < 3) {
-            rules.add("RULE_TOO_SHORT")
-            return FilterResult(FilterOutcome.REJECT, rules)
-        }
         if (Regex("(.)\\1{9,}").containsMatchIn(normalizedText)) {
             rules.add("RULE_REPEATED_CHARS")
             return FilterResult(FilterOutcome.REJECT, rules)
