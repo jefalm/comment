@@ -56,7 +56,7 @@ Checkpoint 02 is complete only when 02A–02C are complete. Checkpoint 03 is com
 | 2A | `02A_JEV_INSPECTION.md` | `COMPLETE` | `68e8bfe` | JEV schema inspection passed |
 | 2B | `02B_JEV_IMPLEMENTATION.md` | `COMPLETE` | `7b259d1` | Multi-question JEV implemented |
 | 2C | `02C_JEV_VALIDATION.md` | `COMPLETE` | `7b259d1` | JEV validation suite passed |
-| 3A | `03A_OPENROUTER_INSPECTION.md` | `COMPLETE` | `PENDING` | `docs/optimization/03A_OPENROUTER_HANDOFF.md` produced |
+| 3A | `03A_OPENROUTER_INSPECTION.md` | `COMPLETE` | `bb78574` | `docs/optimization/03A_OPENROUTER_HANDOFF.md` produced |
 | 3B | `03B_REQUEST_AND_BATCHING.md` | `IN_PROGRESS` | `UNSET` | `UNSET` |
 | 3C | `03C_CONCURRENCY_AND_RESPONSE.md` | `NOT_STARTED` | `UNSET` | `UNSET` |
 | 3D | `03D_PIPELINE_VALIDATION.md` | `NOT_STARTED` | `UNSET` | `UNSET` |
