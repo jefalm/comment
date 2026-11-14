@@ -53,22 +53,27 @@ interface ProcessingBatchDao {
 
     @Query(
         """
-        SELECT EXISTS(
-            SELECT 1 FROM processing_batches
-            WHERE importId = :importId
-                AND processingConfigVersion = :configVersion
-                AND stage IN ('JEV_GATE', 'GLM_ANALYSIS')
-                AND (
-                    status = 'RETRY_WAIT'
-                    OR (status = 'IN_FLIGHT' AND (leaseExpiresAt IS NULL OR leaseExpiresAt > :now))
-                )
+        SELECT (
+            EXISTS(
+                SELECT 1 FROM processing_batches
+                WHERE importId = :importId
+                    AND processingConfigVersion = :configVersion
+                    AND stage IN ('JEV_GATE', 'GLM_ANALYSIS')
+                    AND status IN ('PLANNED', 'RETRY_WAIT', 'IN_FLIGHT')
+            )
+            OR
+            EXISTS(
+                SELECT 1 FROM comments
+                WHERE importId = :importId
+                    AND processingConfigVersion = :configVersion
+                    AND processingState IN ('READY_JEV', 'JEV_IN_PROGRESS', 'READY_GLM', 'GLM_IN_PROGRESS', 'RETRY_WAIT')
+            )
         )
         """
     )
     suspend fun hasPendingAnalysisBatches(
         importId: String,
-        configVersion: Long,
-        now: Long
+        configVersion: Long
     ): Boolean
 
     @Query(

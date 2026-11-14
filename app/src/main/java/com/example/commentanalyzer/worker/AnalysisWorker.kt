@@ -41,8 +41,7 @@ class AnalysisWorker(
         }
         if (app.database.processingBatchDao().hasPendingAnalysisBatches(
                 importId,
-                configVersion,
-                System.currentTimeMillis()
+                configVersion
             )
         ) {
             return Result.retry()

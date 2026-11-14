@@ -123,7 +123,7 @@ class ProductionAnalysisIntegrationTest {
 
         container().analysisOrchestrator.run(IMPORT_ID, config())
 
-        assertEquals(1, glmService.calls)
+        assertEquals(2, glmService.calls)
         assertEquals(
             0,
             database.analysisResultDao().getResultsForComment("batch-a", CONFIG_VERSION)

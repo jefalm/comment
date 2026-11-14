@@ -77,8 +77,10 @@ class OpenRouterGlmDeepAnalyzerTest {
     @Test
     fun responseHealingDoesNotBypassStrictSchemaOrExactIdValidation() = runBlocking {
         server.enqueue(response(results("c1", "other")))
+        server.enqueue(response(results("c1", "other")))
         assertRejected(analyzer().analyze(inputs(), config()), "GLM_RESULT_ID_SET_MISMATCH")
 
+        server.enqueue(response("""{"schemaVersion":1,"results":[]}"""))
         server.enqueue(response("""{"schemaVersion":1,"results":[]}"""))
         assertRejected(analyzer().analyze(inputs(), config()), "GLM_RESULT_ID_SET_MISMATCH")
 
@@ -157,6 +159,7 @@ class OpenRouterGlmDeepAnalyzerTest {
     @Test
     fun missingRequestedIdRejectsWholeBatch() = runBlocking {
         server.enqueue(response(results("c1")))
+        server.enqueue(response(results("c1")))
         val result = analyzer().analyze(inputs(), config())
         assertEquals("GLM_RESULT_ID_SET_MISMATCH", result.error)
         assertNotNull(result.errorSummary)
@@ -171,6 +174,7 @@ class OpenRouterGlmDeepAnalyzerTest {
 
     @Test
     fun unexpectedReturnedIdRejectsWholeBatch() = runBlocking {
+        server.enqueue(response(results("c1", "other")))
         server.enqueue(response(results("c1", "other")))
         val result = analyzer().analyze(inputs(), config())
         assertEquals("GLM_RESULT_ID_SET_MISMATCH", result.error)
@@ -200,7 +204,40 @@ class OpenRouterGlmDeepAnalyzerTest {
     }
 
     @Test
-    fun serverErrorResponseIsRejected() = assertHttpFailure(503, "HTTP_SERVER_ERROR_503")
+    fun serverErrorResponseIsRejected() =
+        assertHttpFailure(503, "HTTP_SERVER_ERROR_503")
+
+    @Test
+    fun glmIdMismatchRetriesOnceAndSucceedsWhenValid() = runBlocking {
+        server.enqueue(response(results("c1"))) // first: mismatch
+        server.enqueue(response(results("c1", "c2"))) // second: valid
+
+        val result = analyzer().analyze(inputs(), config())
+        assertEquals(2, server.requestCount)
+        assertNull(result.error)
+        assertEquals(listOf("c1", "c2"), result.results.map { it.commentId })
+    }
+
+    @Test
+    fun glmIdMismatchRetriesOnceAndPermanentFailureWhenMismatchPersists() = runBlocking {
+        server.enqueue(response(results("c1"))) // first: mismatch
+        server.enqueue(response(results("c1"))) // second: mismatch
+
+        val result = analyzer().analyze(inputs(), config())
+        assertEquals(2, server.requestCount)
+        assertEquals("GLM_RESULT_ID_SET_MISMATCH", result.error)
+        assertTrue(result.results.isEmpty())
+    }
+
+    @Test
+    fun nonMismatchErrorDoesNotRetry() = runBlocking {
+        server.enqueue(response("{invalid-json")) // first: malformed json
+
+        val result = analyzer().analyze(inputs(), config())
+        assertEquals(1, server.requestCount)
+        assertEquals("GLM_MALFORMED_JSON", result.error)
+        assertTrue(result.results.isEmpty())
+    }
 
     private fun assertFailure(content: String, expectedError: String = "GLM_MALFORMED_JSON") = runBlocking {
         server.enqueue(response(content))

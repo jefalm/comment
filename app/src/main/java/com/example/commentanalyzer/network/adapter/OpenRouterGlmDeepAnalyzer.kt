@@ -116,7 +116,53 @@ class OpenRouterGlmDeepAnalyzer(
             return result(batchId, requestedModel, null, emptyList(), "GLM_RESPONSE_SCHEMA_MISMATCH")
         } ?: return result(batchId, requestedModel, null, emptyList(), "GLM_EMPTY_RESPONSE")
 
-        return analyzeResponse(batchId, requestedModel, requestedIds.toSet(), decodedResponse)
+        val initialResult = analyzeResponse(batchId, requestedModel, requestedIds.toSet(), decodedResponse)
+        if (initialResult.error != "GLM_RESULT_ID_SET_MISMATCH") {
+            return initialResult
+        }
+
+        // Retry exactly once on GLM_RESULT_ID_SET_MISMATCH
+        val retryResponse = try {
+            glmApiService.createChatCompletion(request)
+        } catch (_: IOException) {
+            return result(batchId, requestedModel, null, emptyList(), "NETWORK_ERROR")
+        } catch (_: Exception) {
+            return result(batchId, requestedModel, null, emptyList(), "GLM_RESPONSE_ERROR")
+        }
+        if (!retryResponse.isSuccessful) {
+            val code = retryResponse.code()
+            val retryAfter = retryResponse.headers().get("Retry-After")?.toLongOrNull()
+            val error = when (code) {
+                401 -> "HTTP_401_UNAUTHORIZED"
+                429 -> "HTTP_429_RATE_LIMIT"
+                in 500..599 -> "HTTP_SERVER_ERROR_$code"
+                else -> "HTTP_ERROR_$code"
+            }
+            return result(batchId, requestedModel, null, emptyList(), error, retryAfterSeconds = retryAfter)
+        }
+
+        val retryResponseBody = retryResponse.body()
+            ?: return result(batchId, requestedModel, null, emptyList(), "GLM_EMPTY_RESPONSE")
+        val retryResponseText = try {
+            retryResponseBody.string()
+        } catch (_: IOException) {
+            return result(batchId, requestedModel, null, emptyList(), "NETWORK_ERROR")
+        }
+        val retryResponseJson = try {
+            JsonParser.parseString(retryResponseText)
+        } catch (_: Exception) {
+            return result(batchId, requestedModel, null, emptyList(), "GLM_MALFORMED_JSON")
+        }
+        if (!retryResponseJson.isJsonObject) {
+            return result(batchId, requestedModel, null, emptyList(), "GLM_RESPONSE_SCHEMA_MISMATCH")
+        }
+        val decodedRetryResponse = try {
+            gson.fromJson(retryResponseJson, GlmResponse::class.java)
+        } catch (_: Exception) {
+            return result(batchId, requestedModel, null, emptyList(), "GLM_RESPONSE_SCHEMA_MISMATCH")
+        } ?: return result(batchId, requestedModel, null, emptyList(), "GLM_EMPTY_RESPONSE")
+
+        return analyzeResponse(batchId, requestedModel, requestedIds.toSet(), decodedRetryResponse)
     }
 
     private fun analyzeResponse(
