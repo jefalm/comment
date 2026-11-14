@@ -17,7 +17,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
-class OpenRouterJevSemanticGate(
+class TypeSafeJevSemanticGate(
     private val jevApiService: JevApiService,
     private val tokenProvider: () -> String?
 ) : SemanticGate {
@@ -46,7 +46,7 @@ class OpenRouterJevSemanticGate(
                 outputTokens = null,
                 costUsd = null,
                 results = emptyList(),
-                error = "OPENROUTER_KEY_MISSING"
+                error = "TYPESAFE_KEY_MISSING"
             )
         }
 
@@ -134,7 +134,7 @@ class OpenRouterJevSemanticGate(
         }
 
         val request = JevRequest(
-            model = if (config.model.isNotBlank()) config.model else "typesafe/jev-1.14",
+            model = if (config.model.isNotBlank()) config.model else "jev-1.14.0",
             state = input.text,
             questions = questions
         )

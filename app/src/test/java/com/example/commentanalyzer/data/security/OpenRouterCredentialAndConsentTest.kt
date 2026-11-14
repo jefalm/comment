@@ -113,4 +113,37 @@ class OpenRouterCredentialAndConsentTest {
         assertFalse(mask.contains(secretKey))
         assertEquals("Configured (••••)", mask)
     }
+
+    @Test
+    fun testTypeSafeCredentialSecureStorageAndMask() {
+        val store = FakeCredentialStore()
+        val evaluator = ReadinessEvaluator(store)
+        val typeSafeKeyName = "typesafe_jev_api_key"
+        val openRouterKeyName = "openrouter_api_key"
+
+        // Initial state: not configured
+        assertFalse(evaluator.hasKey(typeSafeKeyName))
+        assertEquals("Not configured", evaluator.getMask(typeSafeKeyName))
+
+        // Save TypeSafe key
+        val secretTypeSafeKey = "ts-key-9988776655"
+        store.saveApiKey(typeSafeKeyName, secretTypeSafeKey)
+        assertTrue(evaluator.hasKey(typeSafeKeyName))
+        assertEquals(secretTypeSafeKey, store.getApiKey(typeSafeKeyName))
+        val mask = evaluator.getMask(typeSafeKeyName)
+        assertEquals("Configured (••••)", mask)
+        assertFalse(mask.contains(secretTypeSafeKey))
+
+        // OpenRouter key remains independent
+        assertFalse(evaluator.hasKey(openRouterKeyName))
+        store.saveApiKey(openRouterKeyName, "sk-openrouter-key")
+        assertEquals("sk-openrouter-key", store.getApiKey(openRouterKeyName))
+        assertEquals(secretTypeSafeKey, store.getApiKey(typeSafeKeyName))
+
+        // Clear TypeSafe key does not affect OpenRouter key
+        store.clearApiKey(typeSafeKeyName)
+        assertFalse(evaluator.hasKey(typeSafeKeyName))
+        assertEquals("Not configured", evaluator.getMask(typeSafeKeyName))
+        assertTrue(evaluator.hasKey(openRouterKeyName))
+    }
 }

@@ -244,8 +244,8 @@ class AnalysisViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun isRemoteProcessingReady(): Boolean = runCatching {
-        !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.OPENROUTER_API_KEY_NAME)
-            .isNullOrBlank() &&
+        !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.OPENROUTER_API_KEY_NAME).isNullOrBlank() &&
+            !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.TYPESAFE_API_KEY_NAME).isNullOrBlank() &&
             app.secureCredentialStore.getBoolean(
                 CommentAnalyzerApplication.OPENROUTER_CONSENT_KEY,
                 false

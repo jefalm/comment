@@ -26,9 +26,16 @@ import kotlin.random.Random
 
 data class RemoteProcessingReadiness(
     val hasOpenRouterKey: Boolean,
-    val remoteProcessingConsent: Boolean
+    val remoteProcessingConsent: Boolean,
+    val hasTypeSafeKey: Boolean = true
 ) {
     val isReady: Boolean
+        get() = hasOpenRouterKey && hasTypeSafeKey && remoteProcessingConsent
+
+    val isJevReady: Boolean
+        get() = hasTypeSafeKey && remoteProcessingConsent
+
+    val isGlmReady: Boolean
         get() = hasOpenRouterKey && remoteProcessingConsent
 }
 
@@ -54,16 +61,21 @@ class AnalysisOrchestrator(
         config: ProcessingConfigEntity
     ): AnalysisRunResult {
         require(importId.isNotBlank())
-        require(config.jevModelRequested == JEV_MODEL)
-        require(config.glmModelRequested == GLM_MODEL)
-        require(config.jevRejectThreshold.isFinite() && config.jevPassThreshold.isFinite())
-        require(config.jevRejectThreshold in 0.0..1.0 && config.jevPassThreshold in 0.0..1.0)
-        require(config.jevRejectThreshold < config.jevPassThreshold)
+        val effectiveConfig = if (config.jevModelRequested == ProcessingConfigBootstrap.LEGACY_JEV_MODEL) {
+            config.copy(jevModelRequested = JEV_MODEL)
+        } else {
+            config
+        }
+        require(effectiveConfig.jevModelRequested == JEV_MODEL)
+        require(effectiveConfig.glmModelRequested == GLM_MODEL)
+        require(effectiveConfig.jevRejectThreshold.isFinite() && effectiveConfig.jevPassThreshold.isFinite())
+        require(effectiveConfig.jevRejectThreshold in 0.0..1.0 && effectiveConfig.jevPassThreshold in 0.0..1.0)
+        require(effectiveConfig.jevRejectThreshold < effectiveConfig.jevPassThreshold)
 
         val startRunTime = clock()
         val imported = database.commentDao().getImportedCommentsForAnalysis(
             importId = importId,
-            configVersion = config.configVersion,
+            configVersion = effectiveConfig.configVersion,
             limit = MAX_COMMENTS_PER_RUN
         )
         if (imported.isNotEmpty()) {
@@ -75,32 +87,43 @@ class AnalysisOrchestrator(
             telemetryRecorder?.recordEvent(TelemetryEvent.LocalFilter(rejected, reviewed, passed))
             persistence.persistLocalFilterResults(
                 importId,
-                config.configVersion,
+                effectiveConfig.configVersion,
                 evaluations
             )
         }
 
-        if (!readiness().isReady) {
+        val readyState = readiness()
+        val jevReady = readyState.isJevReady
+        val glmReady = readyState.isGlmReady
+
+        if (!jevReady && !glmReady) {
             val totalMs = clock() - startRunTime
             telemetryRecorder?.recordEvent(TelemetryEvent.Timing(0L, 0L, 0L, totalMs, totalMs))
             return AnalysisRunResult(imported.size, true, 0, 0)
         }
 
-        val jevCount = processStage(
-            importId = importId,
-            config = config,
-            stage = ProcessingStage.JEV_GATE,
-            state = ProcessingState.READY_JEV
-        )
-        val glmCount = processStage(
-            importId = importId,
-            config = config,
-            stage = ProcessingStage.GLM_ANALYSIS,
-            state = ProcessingState.READY_GLM
-        )
+        val jevCount = if (jevReady) {
+            processStage(
+                importId = importId,
+                config = effectiveConfig,
+                stage = ProcessingStage.JEV_GATE,
+                state = ProcessingState.READY_JEV
+            )
+        } else 0
+
+        val glmCount = if (glmReady) {
+            processStage(
+                importId = importId,
+                config = effectiveConfig,
+                stage = ProcessingStage.GLM_ANALYSIS,
+                state = ProcessingState.READY_GLM
+            )
+        } else 0
+
+        val isBlocked = !readyState.isReady
         val totalMs = clock() - startRunTime
         telemetryRecorder?.recordEvent(TelemetryEvent.Timing(0L, 0L, 0L, totalMs, totalMs))
-        return AnalysisRunResult(imported.size, false, jevCount, glmCount)
+        return AnalysisRunResult(imported.size, isBlocked, jevCount, glmCount)
     }
 
     private suspend fun processStage(
@@ -404,7 +427,7 @@ class AnalysisOrchestrator(
             .joinToString("") { "%02x".format(it) }
 
     private companion object {
-        const val JEV_MODEL = "typesafe/jev-1.14"
+        const val JEV_MODEL = "jev-1.14.0"
         const val GLM_MODEL = "z-ai/glm-5.3-flash"
         const val GATE_QUESTION_KEY = "comment_quality_gate"
         const val MAX_COMMENTS_PER_RUN = 5_000

@@ -58,6 +58,8 @@ data class CommentViewerUiState(
     val activeImportId: String? = null,
     val resumableImportId: String? = null,
     val hasYouTubeApiKey: Boolean = false,
+    val hasTypeSafeKey: Boolean = false,
+    val typeSafeKeyMask: String = "Not configured",
     val hasOpenRouterKey: Boolean = false,
     val openrouterKeyMask: String = "Not configured",
     val remoteProcessingConsent: Boolean = false,
@@ -80,6 +82,7 @@ class CommentViewerViewModel(application: Application) : AndroidViewModel(applic
 
     init {
         refreshApiKeyStatus()
+        refreshTypeSafeStatus()
         refreshOpenRouterStatus()
         refreshResumableImport()
     }
@@ -108,9 +111,32 @@ class CommentViewerViewModel(application: Application) : AndroidViewModel(applic
         _uiState.update { it.copy(hasYouTubeApiKey = hasKey) }
     }
 
+    fun refreshTypeSafeStatus() {
+        val hasKey = runCatching {
+            !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.TYPESAFE_API_KEY_NAME).isNullOrBlank()
+        }.getOrDefault(false)
+        val mask = if (hasKey) "Configured (••••)" else "Not configured"
+        val hasOpenRouter = runCatching {
+            !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.OPENROUTER_API_KEY_NAME).isNullOrBlank()
+        }.getOrDefault(false)
+        val consent = runCatching {
+            app.secureCredentialStore.getBoolean(CommentAnalyzerApplication.OPENROUTER_CONSENT_KEY, false)
+        }.getOrDefault(false)
+        _uiState.update {
+            it.copy(
+                hasTypeSafeKey = hasKey,
+                typeSafeKeyMask = mask,
+                isRemoteProcessingReady = hasKey && hasOpenRouter && consent
+            )
+        }
+    }
+
     fun refreshOpenRouterStatus() {
         val hasKey = runCatching {
             !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.OPENROUTER_API_KEY_NAME).isNullOrBlank()
+        }.getOrDefault(false)
+        val hasTypeSafe = runCatching {
+            !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.TYPESAFE_API_KEY_NAME).isNullOrBlank()
         }.getOrDefault(false)
         val consent = runCatching {
             app.secureCredentialStore.getBoolean(CommentAnalyzerApplication.OPENROUTER_CONSENT_KEY, false)
@@ -121,7 +147,7 @@ class CommentViewerViewModel(application: Application) : AndroidViewModel(applic
                 hasOpenRouterKey = hasKey,
                 openrouterKeyMask = mask,
                 remoteProcessingConsent = consent,
-                isRemoteProcessingReady = hasKey && consent
+                isRemoteProcessingReady = hasKey && hasTypeSafe && consent
             )
         }
     }
@@ -130,6 +156,7 @@ class CommentViewerViewModel(application: Application) : AndroidViewModel(applic
         runCatching {
             app.secureCredentialStore.saveBoolean(CommentAnalyzerApplication.OPENROUTER_CONSENT_KEY, consent)
         }.onSuccess {
+            refreshTypeSafeStatus()
             refreshOpenRouterStatus()
         }
     }

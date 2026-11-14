@@ -1,7 +1,7 @@
 package com.example.commentanalyzer.network.dto.jev
 
 data class JevRequest(
-    val model: String = "typesafe/jev-1.14",
+    val model: String = "jev-1.14.0",
     val state: String,
     val questions: Map<String, JevQuestionItem>
 )

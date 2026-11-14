@@ -17,7 +17,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class OpenRouterJevSemanticGateTest {
+class TypeSafeJevSemanticGateTest {
 
     private val server = MockWebServer()
     private val gson = Gson()
@@ -27,14 +27,14 @@ class OpenRouterJevSemanticGateTest {
         server.shutdown()
     }
 
-    private fun createGate(): OpenRouterJevSemanticGate {
-        val tokenProvider = { "sk-test-openrouter-key" }
+    private fun createGate(): TypeSafeJevSemanticGate {
+        val tokenProvider = { "test-typesafe-key" }
         val service = JevApiService.create(
             baseUrl = server.url("/").toString(),
             tokenProvider = tokenProvider
         )
 
-        return OpenRouterJevSemanticGate(
+        return TypeSafeJevSemanticGate(
             jevApiService = service,
             tokenProvider = tokenProvider
         )
@@ -69,8 +69,10 @@ class OpenRouterJevSemanticGateTest {
         assertEquals("gen-123", result.results[0].rawOutput)
 
         val recorded = server.takeRequest()
-        assertEquals("Bearer sk-test-openrouter-key", recorded.getHeader("Authorization"))
-        assertEquals("YouTube Comment Analyzer", recorded.getHeader("X-Title"))
+        assertEquals("/v1/systemone", recorded.path)
+        assertEquals("Bearer test-typesafe-key", recorded.getHeader("Authorization"))
+        assertNull(recorded.getHeader("X-Title"))
+        assertNull(recorded.getHeader("HTTP-Referer"))
     }
 
     @Test
@@ -226,23 +228,23 @@ class OpenRouterJevSemanticGateTest {
     }
 
     @Test
-    fun testMissingOpenRouterKey() = runBlocking {
+    fun testMissingTypeSafeKey() = runBlocking {
         val tokenProvider = { null as String? }
         val service = JevApiService.create(
             baseUrl = server.url("/").toString(),
             tokenProvider = tokenProvider
         )
 
-        val gate = OpenRouterJevSemanticGate(
+        val gate = TypeSafeJevSemanticGate(
             jevApiService = service,
             tokenProvider = tokenProvider
         )
         val inputs = listOf(GateInput("c1", "Test comment", null, null))
-        val config = GateConfig(1L, "typesafe/jev-1.14", 0.3, 0.7)
+        val config = GateConfig(1L, "jev-1.14.0", 0.3, 0.7)
 
         val result = gate.screen(inputs, config)
 
-        assertEquals("OPENROUTER_KEY_MISSING", result.error)
+        assertEquals("TYPESAFE_KEY_MISSING", result.error)
     }
 
     @Test

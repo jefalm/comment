@@ -170,10 +170,12 @@ class ProductionAnalysisIntegrationTest {
 
     private fun container(
         key: String? = "test",
+        typeSafeKey: String? = key,
         consent: Boolean = true
     ) = ProductionAppContainer(
         database = database,
         openRouterKeyProvider = { key },
+        typeSafeKeyProvider = { typeSafeKey },
         remoteProcessingConsentProvider = { consent },
         jevApiService = jevService,
         glmApiService = glmService

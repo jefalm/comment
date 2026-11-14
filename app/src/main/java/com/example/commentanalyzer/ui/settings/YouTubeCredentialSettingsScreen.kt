@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
@@ -25,6 +27,9 @@ import com.example.commentanalyzer.R
 fun YouTubeCredentialSettingsScreen(
     hasYouTubeApiKey: Boolean,
     onManageApiKey: () -> Unit,
+    hasTypeSafeKey: Boolean = false,
+    typeSafeKeyMask: String = "Not configured",
+    onManageTypeSafeKey: () -> Unit = {},
     hasOpenRouterKey: Boolean,
     openrouterKeyMask: String,
     onManageOpenRouterKey: () -> Unit,
@@ -36,6 +41,7 @@ fun YouTubeCredentialSettingsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -49,6 +55,11 @@ fun YouTubeCredentialSettingsScreen(
             ) {
                 Text(stringResource(R.string.settings_youtube_title), style = MaterialTheme.typography.titleMedium)
                 Text(
+                    stringResource(R.string.settings_youtube_purpose),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Text(
                     stringResource(
                         if (hasYouTubeApiKey) R.string.settings_youtube_configured
                         else R.string.settings_youtube_not_configured
@@ -61,6 +72,25 @@ fun YouTubeCredentialSettingsScreen(
             }
         }
 
+        // TypeSafe JEV API Key Card
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(stringResource(R.string.settings_typesafe_title), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    stringResource(R.string.settings_typesafe_purpose),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Text(typeSafeKeyMask, style = MaterialTheme.typography.bodyLarge)
+                Button(onClick = onManageTypeSafeKey) {
+                    Text(stringResource(R.string.settings_typesafe_manage))
+                }
+            }
+        }
+
         // OpenRouter & Remote Processing Card
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -68,6 +98,11 @@ fun YouTubeCredentialSettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(stringResource(R.string.settings_openrouter_title), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    stringResource(R.string.settings_openrouter_purpose),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
                 Text(openrouterKeyMask, style = MaterialTheme.typography.bodyLarge)
                 Button(onClick = onManageOpenRouterKey) {
                     Text(stringResource(R.string.settings_openrouter_manage))

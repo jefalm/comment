@@ -18,7 +18,7 @@ import org.junit.Test
 import retrofit2.Response
 import java.util.concurrent.atomic.AtomicInteger
 
-class OpenRouterJevSemanticGateConcurrencyTest {
+class TypeSafeJevSemanticGateConcurrencyTest {
     @Test
     fun limitsConcurrencyToFourAndKeepsResultsAssociatedWithInputs() = runBlocking {
         val active = AtomicInteger()
@@ -56,7 +56,7 @@ class OpenRouterJevSemanticGateConcurrencyTest {
         val result = gate(service).screen(inputs, gateConfig())
 
         assertEquals(4, maxActive.get())
-        assertTrue(maxActive.get() <= OpenRouterJevSemanticGate.MAX_CONCURRENT_JEV_REQUESTS)
+        assertTrue(maxActive.get() <= TypeSafeJevSemanticGate.MAX_CONCURRENT_JEV_REQUESTS)
         assertEquals(inputs.map { it.commentId }, result.results.map { it.commentId })
         assertEquals((0 until inputs.size).map { it / 20.0 }, result.results.map { it.probability })
         assertEquals(null, result.error)
@@ -154,7 +154,7 @@ class OpenRouterJevSemanticGateConcurrencyTest {
     }
 
     private fun gate(service: JevApiService) =
-        OpenRouterJevSemanticGate(service) { "test-token" }
+        TypeSafeJevSemanticGate(service) { "test-token" }
 
     private fun gateConfig() = GateConfig(
         configVersion = 1,

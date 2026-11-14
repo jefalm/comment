@@ -1,9 +1,8 @@
 package com.example.commentanalyzer.network.jev
 
-import com.example.commentanalyzer.network.OpenRouterAttributionConfig
-import com.example.commentanalyzer.network.OpenRouterHeaderInterceptor
-import com.example.commentanalyzer.network.dto.jev.JevRequest
+import com.example.commentanalyzer.network.TypeSafeHeaderInterceptor
 import com.example.commentanalyzer.network.dto.jev.JevDecisionResponse
+import com.example.commentanalyzer.network.dto.jev.JevRequest
 import okhttp3.OkHttpClient
 import retrofit2.Response
 import retrofit2.Retrofit
@@ -12,20 +11,19 @@ import retrofit2.http.Body
 import retrofit2.http.POST
 
 interface JevApiService {
-    @POST("api/alpha/decisions")
+    @POST("v1/systemone")
     suspend fun getDecisions(
         @Body request: JevRequest
     ): Response<JevDecisionResponse>
 
     companion object {
         fun create(
-            baseUrl: String = "https://openrouter.ai/",
+            baseUrl: String = "https://api.typesafe.ai/",
             tokenProvider: () -> String?,
-            attributionConfig: OpenRouterAttributionConfig = OpenRouterAttributionConfig(),
             okHttpClient: OkHttpClient? = null
         ): JevApiService {
             val client = (okHttpClient?.newBuilder() ?: OkHttpClient.Builder())
-                .addInterceptor(OpenRouterHeaderInterceptor(tokenProvider, attributionConfig))
+                .addInterceptor(TypeSafeHeaderInterceptor(tokenProvider))
                 .build()
 
             return Retrofit.Builder()

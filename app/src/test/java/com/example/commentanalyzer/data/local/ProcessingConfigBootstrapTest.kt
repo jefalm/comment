@@ -52,17 +52,37 @@ class ProcessingConfigBootstrapTest {
         val first = ProcessingConfigBootstrap.bootstrapActiveConfig(database)
         assertEquals(2L, first.configVersion)
         assertTrue(first.isActive)
-        assertEquals("typesafe/jev-1.14", first.jevModelRequested)
+        assertEquals("jev-1.14.0", first.jevModelRequested)
         assertEquals("z-ai/glm-5.3-flash", first.glmModelRequested)
 
         val active = database.processingConfigDao().getActiveConfig()
         assertNotNull(active)
         assertEquals(2L, active?.configVersion)
+        assertEquals("jev-1.14.0", active?.jevModelRequested)
 
         // 2. Idempotent bootstrap call
         val second = ProcessingConfigBootstrap.bootstrapActiveConfig(database)
         assertEquals(2L, second.configVersion)
         assertTrue(second.isActive)
+        assertEquals("jev-1.14.0", second.jevModelRequested)
+    }
+
+    @Test
+    fun bootstrapNormalizesLegacyModelToCanonicalDirectTypeSafeModel() = runBlocking {
+        // Given legacy config row in the database
+        val legacyConfig = ProcessingConfigBootstrap.createDefaultV2Config().copy(
+            jevModelRequested = "typesafe/jev-1.14",
+            isActive = true
+        )
+        database.processingConfigDao().insertConfig(legacyConfig)
+
+        // When bootstrap runs
+        val result = ProcessingConfigBootstrap.bootstrapActiveConfig(database)
+
+        // Then model is safely normalized to canonical jev-1.14.0
+        assertEquals("jev-1.14.0", result.jevModelRequested)
+        val active = database.processingConfigDao().getActiveConfig()
+        assertEquals("jev-1.14.0", active?.jevModelRequested)
     }
 
     @Test

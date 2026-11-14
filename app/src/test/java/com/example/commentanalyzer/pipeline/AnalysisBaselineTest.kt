@@ -67,6 +67,7 @@ class AnalysisBaselineTest {
         return ProductionAppContainer(
             database = database,
             openRouterKeyProvider = tokenProvider,
+            typeSafeKeyProvider = tokenProvider,
             remoteProcessingConsentProvider = { true },
             jevApiService = jevService,
             glmApiService = glmService

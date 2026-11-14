@@ -10,7 +10,7 @@ import com.example.commentanalyzer.data.local.entity.ProcessingConfigEntity
 import com.example.commentanalyzer.domain.analysis.DeepAnalyzer
 import com.example.commentanalyzer.domain.gate.SemanticGate
 import com.example.commentanalyzer.network.adapter.OpenRouterGlmDeepAnalyzer
-import com.example.commentanalyzer.network.adapter.OpenRouterJevSemanticGate
+import com.example.commentanalyzer.network.adapter.TypeSafeJevSemanticGate
 import com.example.commentanalyzer.network.glm.GlmApiService
 import com.example.commentanalyzer.network.jev.JevApiService
 import okhttp3.OkHttpClient
@@ -30,13 +30,15 @@ interface AnalysisAppContainer : AppContainer {
 class ProductionAppContainer internal constructor(
     private val database: AppDatabase,
     private val openRouterKeyProvider: () -> String?,
+    private val typeSafeKeyProvider: () -> String? = { null },
     private val remoteProcessingConsentProvider: () -> Boolean,
     private val openRouterClient: OkHttpClient = OkHttpClient.Builder().build(),
-    jevApiService: JevApiService = JevApiService.create(tokenProvider = openRouterKeyProvider, okHttpClient = openRouterClient),
+    private val typeSafeClient: OkHttpClient = OkHttpClient.Builder().build(),
+    jevApiService: JevApiService = JevApiService.create(tokenProvider = typeSafeKeyProvider, okHttpClient = typeSafeClient),
     glmApiService: GlmApiService = GlmApiService.create(tokenProvider = openRouterKeyProvider, okHttpClient = openRouterClient)
 ) : AnalysisAppContainer {
     override val semanticGate: SemanticGate by lazy {
-        OpenRouterJevSemanticGate(jevApiService, openRouterKeyProvider)
+        TypeSafeJevSemanticGate(jevApiService, typeSafeKeyProvider)
     }
     override val deepAnalyzer: DeepAnalyzer by lazy {
         OpenRouterGlmDeepAnalyzer(glmApiService, openRouterKeyProvider)
@@ -65,7 +67,8 @@ class ProductionAppContainer internal constructor(
             readiness = {
                 RemoteProcessingReadiness(
                     hasOpenRouterKey = !openRouterKeyProvider().isNullOrBlank(),
-                    remoteProcessingConsent = remoteProcessingConsentProvider()
+                    remoteProcessingConsent = remoteProcessingConsentProvider(),
+                    hasTypeSafeKey = !typeSafeKeyProvider().isNullOrBlank()
                 )
             }
         )
@@ -83,7 +86,7 @@ class ProductionAppContainer internal constructor(
         val config = database.processingConfigDao().getConfigByVersion(configVersion)
             ?: ProcessingConfigEntity(
                 configVersion = configVersion,
-                jevModelRequested = "typesafe/jev-1.14",
+                jevModelRequested = "jev-1.14.0",
                 jevRejectThreshold = 0.3,
                 jevPassThreshold = 0.7,
                 glmModelRequested = "z-ai/glm-5.3-flash",

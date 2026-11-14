@@ -245,6 +245,62 @@ class AnalysisOrchestratorTest {
     }
 
     @Test
+    fun typeSafeUnavailableBlocksJevWhileReadyGlmMayProceed() = runBlocking {
+        // Run with both keys to advance a comment to READY_GLM
+        addComment(comment("passed-jev"))
+        orchestrator(readiness = {
+            RemoteProcessingReadiness(
+                hasOpenRouterKey = true,
+                remoteProcessingConsent = true,
+                hasTypeSafeKey = true
+            )
+        }).run(IMPORT_ID, config())
+        assertEquals(ProcessingState.COMPLETED, database.commentDao().getCommentById("passed-jev")?.processingState)
+
+        // Now add a new imported comment that needs JEV
+        addComment(comment("new-comment"))
+        // First run local filter only by omitting consent
+        orchestrator(readiness = {
+            RemoteProcessingReadiness(
+                hasOpenRouterKey = true,
+                remoteProcessingConsent = false,
+                hasTypeSafeKey = false
+            )
+        }).run(IMPORT_ID, config())
+        assertEquals(ProcessingState.READY_JEV, database.commentDao().getCommentById("new-comment")?.processingState)
+
+        // Reset gate and glm call counters
+        gateCalls = 0
+        glmCalls = 0
+
+        // With TypeSafe unavailable and OpenRouter available, READY_JEV must not be processed
+        val result = orchestrator(readiness = {
+            RemoteProcessingReadiness(
+                hasOpenRouterKey = true,
+                remoteProcessingConsent = true,
+                hasTypeSafeKey = false
+            )
+        }).run(IMPORT_ID, config())
+
+        assertTrue(result.remoteProcessingBlocked)
+        assertEquals(0, gateCalls)
+        assertEquals(0, glmCalls)
+        assertEquals(ProcessingState.READY_JEV, database.commentDao().getCommentById("new-comment")?.processingState)
+    }
+
+    @Test
+    fun legacyModelNormalizedToCanonicalDirectTypeSafeModel() = runBlocking {
+        addComment(comment("legacy-model-comment"))
+
+        val legacyConfig = config().copy(jevModelRequested = "typesafe/jev-1.14")
+        orchestrator().run(IMPORT_ID, legacyConfig)
+
+        assertEquals(1, gateCalls)
+        assertEquals(1, glmCalls)
+        assertEquals(ProcessingState.COMPLETED, database.commentDao().getCommentById("legacy-model-comment")?.processingState)
+    }
+
+    @Test
     fun retryableFailureUsesBoundedRetryPolicyAndPersistsSchedule() = runBlocking {
         addComment(comment("retry"))
         gateError = "HTTP_429_RATE_LIMIT"
@@ -342,7 +398,7 @@ class AnalysisOrchestratorTest {
 
     private fun config() = ProcessingConfigEntity(
         configVersion = CONFIG_VERSION,
-        jevModelRequested = "typesafe/jev-1.14",
+        jevModelRequested = "jev-1.14.0",
         jevRejectThreshold = 0.3,
         jevPassThreshold = 0.7,
         glmModelRequested = "z-ai/glm-5.3-flash",
