@@ -46,7 +46,8 @@ class AnalysisOrchestrator(
     private val deepAnalyzer: DeepAnalyzer,
     private val readiness: suspend () -> RemoteProcessingReadiness,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val random: Random = Random.Default
+    private val random: Random = Random.Default,
+    private val telemetryRecorder: TelemetryRecorder? = null
 ) {
     suspend fun run(
         importId: String,
@@ -59,20 +60,29 @@ class AnalysisOrchestrator(
         require(config.jevRejectThreshold in 0.0..1.0 && config.jevPassThreshold in 0.0..1.0)
         require(config.jevRejectThreshold < config.jevPassThreshold)
 
+        val startRunTime = clock()
         val imported = database.commentDao().getImportedCommentsForAnalysis(
             importId = importId,
             configVersion = config.configVersion,
             limit = MAX_COMMENTS_PER_RUN
         )
         if (imported.isNotEmpty()) {
+            telemetryRecorder?.recordEvent(TelemetryEvent.Discovered(imported.size))
+            val evaluations = imported.associate { it.localId to LocalFilter.evaluate(it.normalizedText) }
+            val rejected = evaluations.values.count { it.outcome == com.example.commentanalyzer.domain.filter.FilterOutcome.REJECT }
+            val reviewed = evaluations.values.count { it.outcome == com.example.commentanalyzer.domain.filter.FilterOutcome.REVIEW }
+            val passed = evaluations.values.count { it.outcome == com.example.commentanalyzer.domain.filter.FilterOutcome.PASS }
+            telemetryRecorder?.recordEvent(TelemetryEvent.LocalFilter(rejected, reviewed, passed))
             persistence.persistLocalFilterResults(
                 importId,
                 config.configVersion,
-                imported.associate { it.localId to LocalFilter.evaluate(it.normalizedText) }
+                evaluations
             )
         }
 
         if (!readiness().isReady) {
+            val totalMs = clock() - startRunTime
+            telemetryRecorder?.recordEvent(TelemetryEvent.Timing(0L, 0L, 0L, totalMs, totalMs))
             return AnalysisRunResult(imported.size, true, 0, 0)
         }
 
@@ -88,6 +98,8 @@ class AnalysisOrchestrator(
             stage = ProcessingStage.GLM_ANALYSIS,
             state = ProcessingState.READY_GLM
         )
+        val totalMs = clock() - startRunTime
+        telemetryRecorder?.recordEvent(TelemetryEvent.Timing(0L, 0L, 0L, totalMs, totalMs))
         return AnalysisRunResult(imported.size, false, jevCount, glmCount)
     }
 
@@ -237,6 +249,7 @@ class AnalysisOrchestrator(
             .getCommentsByIds(items.map { it.commentId })
             .associateBy { it.localId }
         val ordered = items.map { requireNotNull(commentsById[it.commentId]) }
+        val startNet = clock()
         when (batch.stage) {
             ProcessingStage.JEV_GATE -> {
                 val response = try {
@@ -252,15 +265,37 @@ class AnalysisOrchestrator(
                         )
                     )
                 } catch (cancelled: CancellationException) {
+                    telemetryRecorder?.recordEvent(TelemetryEvent.Cancellation(1))
                     releaseForResume(batch.batchId)
                     throw cancelled
                 } catch (_: IOException) {
+                    val netTime = clock() - startNet
+                    telemetryRecorder?.recordEvent(TelemetryEvent.Failure(1))
                     recordFailure(batch.batchId, "NETWORK_ERROR")
                     return true
                 }
+                val netTime = clock() - startNet
                 if (response.error != null) {
+                    telemetryRecorder?.recordEvent(TelemetryEvent.Failure(1))
                     recordFailure(batch.batchId, response.error)
                 } else {
+                    val rejected = response.results.count { it.probability < config.jevRejectThreshold }
+                    val passed = response.results.count { it.probability >= config.jevRejectThreshold }
+                    telemetryRecorder?.recordEvent(
+                        TelemetryEvent.JevBatch(
+                            requested = ordered.size,
+                            completed = response.results.size,
+                            rejected = rejected,
+                            passed = passed,
+                            networkTimeMs = netTime,
+                            bytes = batch.requestUtf8Bytes,
+                            estTokens = batch.estimatedInputTokens,
+                            actTokens = (response.inputTokens ?: 0L) + (response.outputTokens ?: 0L),
+                            cost = response.costUsd ?: 0.0,
+                            httpStatus = 200,
+                            model = response.modelResolved
+                        )
+                    )
                     persistence.persistValidatedJevBatch(
                         batch.batchId,
                         response,
@@ -277,15 +312,33 @@ class AnalysisOrchestrator(
                         AnalysisConfig(config.configVersion, config.glmModelRequested)
                     )
                 } catch (cancelled: CancellationException) {
+                    telemetryRecorder?.recordEvent(TelemetryEvent.Cancellation(1))
                     releaseForResume(batch.batchId)
                     throw cancelled
                 } catch (_: IOException) {
+                    val netTime = clock() - startNet
+                    telemetryRecorder?.recordEvent(TelemetryEvent.Failure(1))
                     recordFailure(batch.batchId, "NETWORK_ERROR")
                     return true
                 }
+                val netTime = clock() - startNet
                 if (response.error != null) {
+                    telemetryRecorder?.recordEvent(TelemetryEvent.Failure(1))
                     recordFailure(batch.batchId, response.error)
                 } else {
+                    telemetryRecorder?.recordEvent(
+                        TelemetryEvent.GlmBatch(
+                            requested = ordered.size,
+                            completed = response.results.size,
+                            networkTimeMs = netTime,
+                            bytes = batch.requestUtf8Bytes,
+                            estTokens = batch.estimatedInputTokens,
+                            actTokens = (response.inputTokens ?: 0L) + (response.outputTokens ?: 0L),
+                            cost = response.costUsd ?: 0.0,
+                            httpStatus = 200,
+                            model = response.modelResolved
+                        )
+                    )
                     persistence.persistValidatedGlmBatch(batch.batchId, response)
                 }
             }
@@ -313,6 +366,9 @@ class AnalysisOrchestrator(
         }
         val decision = RetryPolicy.evaluate(statusCode, batch.attemptCount, random = random)
         val retryable = decision.disposition == RetryDisposition.RETRYABLE
+        if (retryable) {
+            telemetryRecorder?.recordEvent(TelemetryEvent.Retry(1))
+        }
         persistence.recordBatchFailure(
             batchId = batchId,
             errorCode = errorCode,
