@@ -180,6 +180,76 @@ class OpenRouterGlmSynthesisAdapterTest {
         assertNull(result.synthesis)
     }
 
+    @Test
+    fun portugueseTargetInstructsSynthesisInBrazilianPortugueseAndMaintainsContract() = runBlocking {
+        server.enqueue(response(validSynthesisJson("c-01")))
+        val context = SynthesisContext(
+            importId = "imp-1",
+            configVersion = 1L,
+            totalRelevantComments = 1,
+            categoryDistribution = mapOf("praise" to 1),
+            sentimentDistribution = mapOf("positive" to 1),
+            evidenceItems = listOf(
+                com.example.commentanalyzer.domain.analysis.SynthesisEvidenceInput(
+                    "c-01", "Ótimo vídeo sobre inteligência artificial!", "praise", "positive", 10, 0.95, 0.95
+                )
+            ),
+            targetLanguage = "pt-BR"
+        )
+
+        val result = adapter().synthesize(context)
+        assertNull(result.error)
+        assertNotNull(result.synthesis)
+
+        val recorded = server.takeRequest()
+        val sent = JsonParser.parseString(recorded.body!!.readUtf8()).asJsonObject
+        val messages = sent.getAsJsonArray("messages")
+        val systemMessage = messages.map { it.asJsonObject }.first { it.get("role").asString == "system" }
+        val systemContent = systemMessage.get("content").asString
+        assertTrue(systemContent.contains("Brazilian Portuguese"))
+
+        val userMessage = messages.map { it.asJsonObject }.first { it.get("role").asString == "user" }
+        val userContent = JsonParser.parseString(userMessage.get("content").asString).asJsonObject
+        assertEquals("pt-BR", userContent.get("targetLanguage").asString)
+        assertEquals(2, userContent.get("schemaVersion").asInt)
+        assertNotNull(userContent.get("evidenceComments"))
+    }
+
+    @Test
+    fun englishTargetInstructsSynthesisInEnglishAndMaintainsContract() = runBlocking {
+        server.enqueue(response(validSynthesisJson("c-01")))
+        val context = SynthesisContext(
+            importId = "imp-1",
+            configVersion = 1L,
+            totalRelevantComments = 1,
+            categoryDistribution = mapOf("praise" to 1),
+            sentimentDistribution = mapOf("positive" to 1),
+            evidenceItems = listOf(
+                com.example.commentanalyzer.domain.analysis.SynthesisEvidenceInput(
+                    "c-01", "Great video about AI developments!", "praise", "positive", 10, 0.95, 0.95
+                )
+            ),
+            targetLanguage = "en"
+        )
+
+        val result = adapter().synthesize(context)
+        assertNull(result.error)
+        assertNotNull(result.synthesis)
+
+        val recorded = server.takeRequest()
+        val sent = JsonParser.parseString(recorded.body!!.readUtf8()).asJsonObject
+        val messages = sent.getAsJsonArray("messages")
+        val systemMessage = messages.map { it.asJsonObject }.first { it.get("role").asString == "system" }
+        val systemContent = systemMessage.get("content").asString
+        assertTrue(systemContent.contains("in English"))
+
+        val userMessage = messages.map { it.asJsonObject }.first { it.get("role").asString == "user" }
+        val userContent = JsonParser.parseString(userMessage.get("content").asString).asJsonObject
+        assertEquals("en", userContent.get("targetLanguage").asString)
+        assertEquals(2, userContent.get("schemaVersion").asInt)
+        assertNotNull(userContent.get("evidenceComments"))
+    }
+
     private fun adapter(): OpenRouterGlmSynthesisAdapter {
         val tokenProvider = { "sk-test-key" }
         return OpenRouterGlmSynthesisAdapter(

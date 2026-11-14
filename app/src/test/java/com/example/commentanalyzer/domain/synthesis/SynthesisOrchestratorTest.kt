@@ -26,8 +26,10 @@ class SynthesisOrchestratorTest {
     private lateinit var orchestrator: SynthesisOrchestrator
     private val fakeAnalyzer = object : SynthesisDeepAnalyzer {
         var callCount = 0
+        var lastContext: SynthesisContext? = null
         override suspend fun synthesize(context: SynthesisContext): SynthesisBatchResult {
             callCount++
+            lastContext = context
             return SynthesisBatchResult(
                 synthesisId = "synthesis:${context.importId}:${context.configVersion}",
                 importId = context.importId,
@@ -220,4 +222,53 @@ class SynthesisOrchestratorTest {
         assertNull(result.synthesis)
         assertNull(database.commentSynthesisDao().getSynthesis("import-1", 1L))
     }
+
+    @Test
+    fun orchestratorPassesDetectedPortugueseLanguageToAnalyzer() = runBlocking {
+        database.commentDao().insertComments(
+            listOf(
+                CommentEntity(
+                    localId = "c-pt-1", sourceType = SourceType.YOUTUBE, sourceScopeKey = "v1", sourceCommentId = "1",
+                    parentSourceCommentId = null, videoId = "v1", importId = "import-pt", authorDisplayName = "U1",
+                    originalText = "Muito bom este vídeo sobre inteligência artificial e economia!",
+                    normalizedText = "muito bom este video", publishedAtEpochMillis = 100L,
+                    publishedAtPrecision = null, fingerprintVersion = 1, fingerprintSha256 = "a",
+                    processingState = com.example.commentanalyzer.data.local.entity.ProcessingState.READY_GLM,
+                    currentStage = com.example.commentanalyzer.data.local.entity.ProcessingStage.GLM_ANALYSIS,
+                    category = "praise", sentiment = "positive", relevanceScore = 1.0, processingConfigVersion = 1L,
+                    leaseOwner = null, leaseExpiresAt = null, nextAttemptAt = null, attemptCountLocal = 0,
+                    attemptCountJev = 0, attemptCountGlm = 0, lastErrorCode = null, lastErrorSummary = null,
+                    createdAt = 100L, updatedAt = 100L, likeCount = 10
+                )
+            )
+        )
+
+        orchestrator.synthesizeImport("import-pt", 1L)
+        assertEquals("pt-BR", fakeAnalyzer.lastContext?.targetLanguage)
+    }
+
+    @Test
+    fun orchestratorPassesDetectedEnglishLanguageToAnalyzer() = runBlocking {
+        database.commentDao().insertComments(
+            listOf(
+                CommentEntity(
+                    localId = "c-en-1", sourceType = SourceType.YOUTUBE, sourceScopeKey = "v1", sourceCommentId = "1",
+                    parentSourceCommentId = null, videoId = "v1", importId = "import-en", authorDisplayName = "U1",
+                    originalText = "Great podcast episode breaking down the tech industry and economics.",
+                    normalizedText = "great podcast episode", publishedAtEpochMillis = 100L,
+                    publishedAtPrecision = null, fingerprintVersion = 1, fingerprintSha256 = "a",
+                    processingState = com.example.commentanalyzer.data.local.entity.ProcessingState.READY_GLM,
+                    currentStage = com.example.commentanalyzer.data.local.entity.ProcessingStage.GLM_ANALYSIS,
+                    category = "praise", sentiment = "positive", relevanceScore = 1.0, processingConfigVersion = 1L,
+                    leaseOwner = null, leaseExpiresAt = null, nextAttemptAt = null, attemptCountLocal = 0,
+                    attemptCountJev = 0, attemptCountGlm = 0, lastErrorCode = null, lastErrorSummary = null,
+                    createdAt = 100L, updatedAt = 100L, likeCount = 10
+                )
+            )
+        )
+
+        orchestrator.synthesizeImport("import-en", 1L)
+        assertEquals("en", fakeAnalyzer.lastContext?.targetLanguage)
+    }
 }
+

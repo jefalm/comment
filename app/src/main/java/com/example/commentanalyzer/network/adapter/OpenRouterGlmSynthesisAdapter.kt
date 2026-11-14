@@ -40,8 +40,23 @@ class OpenRouterGlmSynthesisAdapter(
 
         val evidenceIds = context.evidenceItems.map { it.commentId }.toSet()
 
+        val targetLanguage = context.targetLanguage
+        val languageInstruction = when (targetLanguage) {
+            "pt-BR" -> "Write every human-readable synthesis field (executiveSummary, themes[].title, themes[].description, " +
+                "agreements[].topic, agreements[].description, contrastingPerspectives[].perspectiveA, " +
+                "contrastingPerspectives[].perspectiveB, contrastingPerspectives[].description, " +
+                "notableInsights[].insight, actionableFollowUps[].action, actionableFollowUps[].rationale) " +
+                "in Brazilian Portuguese. Keep JSON keys, IDs, schema values, and machine-readable structure unchanged."
+            else -> "Write every human-readable synthesis field (executiveSummary, themes[].title, themes[].description, " +
+                "agreements[].topic, agreements[].description, contrastingPerspectives[].perspectiveA, " +
+                "contrastingPerspectives[].perspectiveB, contrastingPerspectives[].description, " +
+                "notableInsights[].insight, actionableFollowUps[].action, actionableFollowUps[].rationale) " +
+                "in English. Keep JSON keys, IDs, schema values, and machine-readable structure unchanged."
+        }
+
         val promptPayload = mapOf(
             "schemaVersion" to SCHEMA_VERSION,
+            "targetLanguage" to targetLanguage,
             "authoritativeContext" to mapOf(
                 "totalRelevantComments" to context.totalRelevantComments,
                 "categoryDistribution" to context.categoryDistribution,
@@ -67,7 +82,7 @@ class OpenRouterGlmSynthesisAdapter(
                     role = "system",
                     content = "You are a bounded cross-comment synthesis engine. JEV owns per-comment classifications. " +
                         "Do not recalculate totals. Use only the provided authoritative category and sentiment distributions, " +
-                        "and cite comment IDs strictly from the supplied evidence comments. Return schemaVersion 2."
+                        "and cite comment IDs strictly from the supplied evidence comments. $languageInstruction Return schemaVersion 2."
                 ),
                 GlmMessage(
                     role = "user",

@@ -74,13 +74,17 @@ class SynthesisOrchestrator(
         val sentimentDist = comments.groupingBy { it.sentiment ?: "unlabeled" }.eachCount()
 
         val evidence = EvidencePlanner.planEvidence(comments)
+        val detectedLanguage = SynthesisLanguageDetector.detectLanguage(
+            evidence.map { it.text }.ifEmpty { comments.map { it.originalText } }
+        )
         val context = SynthesisContext(
             importId = importId,
             configVersion = configVersion,
             totalRelevantComments = totalRelevantComments,
             categoryDistribution = categoryDist,
             sentimentDistribution = sentimentDist,
-            evidenceItems = evidence
+            evidenceItems = evidence,
+            targetLanguage = detectedLanguage.code
         )
 
         val batchResult = synthesisAnalyzer.synthesize(context)

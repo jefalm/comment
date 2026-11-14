@@ -19,7 +19,8 @@ data class SynthesisContext(
     val totalRelevantComments: Int,
     val categoryDistribution: Map<String, Int>,
     val sentimentDistribution: Map<String, Int>,
-    val evidenceItems: List<SynthesisEvidenceInput>
+    val evidenceItems: List<SynthesisEvidenceInput>,
+    val targetLanguage: String = "en"
 )
 
 interface SynthesisDeepAnalyzer {
