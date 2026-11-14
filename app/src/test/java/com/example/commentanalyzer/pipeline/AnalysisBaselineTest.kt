@@ -203,10 +203,11 @@ class AnalysisBaselineTest {
         val result = orchestrator.run(importId, config())
 
         assertEquals(10, result.locallyProcessedComments)
+        assertEquals(0, result.attemptedGlmBatches)
         val metrics = telemetry.getMetrics()
         assertEquals(10, metrics.discoveredCount)
         assertTrue(metrics.jevRequestCount > 0)
-        assertTrue(metrics.glmRequestCount > 0)
+        assertEquals(0, metrics.glmRequestCount)
         assertTrue(metrics.actualTokens > 0L)
         assertTrue(metrics.costUsd > 0.0)
     }

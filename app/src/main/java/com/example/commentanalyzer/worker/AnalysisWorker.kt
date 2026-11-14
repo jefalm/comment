@@ -23,14 +23,17 @@ class AnalysisWorker(
         val configVersion = inputData.getLong(KEY_CONFIG_VERSION, INVALID_CONFIG_VERSION)
         if (configVersion == INVALID_CONFIG_VERSION) return Result.failure()
 
-        val hasKey = !app.secureCredentialStore.getApiKey(
+        val hasOpenRouterKey = !app.secureCredentialStore.getApiKey(
             CommentAnalyzerApplication.OPENROUTER_API_KEY_NAME
+        ).isNullOrBlank()
+        val hasTypeSafeKey = !app.secureCredentialStore.getApiKey(
+            CommentAnalyzerApplication.TYPESAFE_API_KEY_NAME
         ).isNullOrBlank()
         val hasConsent = app.secureCredentialStore.getBoolean(
             CommentAnalyzerApplication.OPENROUTER_CONSENT_KEY,
             false
         )
-        if (!hasKey || !hasConsent) {
+        if (!hasOpenRouterKey || !hasTypeSafeKey || !hasConsent) {
             return Result.failure(Data.Builder().putString(KEY_ERROR, ERROR_NOT_READY).build())
         }
 

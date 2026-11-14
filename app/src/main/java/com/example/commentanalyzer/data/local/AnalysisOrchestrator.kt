@@ -94,31 +94,21 @@ class AnalysisOrchestrator(
 
         val readyState = readiness()
         val jevReady = readyState.isJevReady
-        val glmReady = readyState.isGlmReady
 
-        if (!jevReady && !glmReady) {
+        if (!jevReady) {
             val totalMs = clock() - startRunTime
             telemetryRecorder?.recordEvent(TelemetryEvent.Timing(0L, 0L, 0L, totalMs, totalMs))
             return AnalysisRunResult(imported.size, true, 0, 0)
         }
 
-        val jevCount = if (jevReady) {
-            processStage(
-                importId = importId,
-                config = effectiveConfig,
-                stage = ProcessingStage.JEV_GATE,
-                state = ProcessingState.READY_JEV
-            )
-        } else 0
+        val jevCount = processStage(
+            importId = importId,
+            config = effectiveConfig,
+            stage = ProcessingStage.JEV_GATE,
+            state = ProcessingState.READY_JEV
+        )
 
-        val glmCount = if (glmReady) {
-            processStage(
-                importId = importId,
-                config = effectiveConfig,
-                stage = ProcessingStage.GLM_ANALYSIS,
-                state = ProcessingState.READY_GLM
-            )
-        } else 0
+        val glmCount = 0
 
         val isBlocked = !readyState.isReady
         val totalMs = clock() - startRunTime

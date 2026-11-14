@@ -58,7 +58,7 @@ interface ProcessingBatchDao {
                 SELECT 1 FROM processing_batches
                 WHERE importId = :importId
                     AND processingConfigVersion = :configVersion
-                    AND stage IN ('JEV_GATE', 'GLM_ANALYSIS')
+                    AND stage = 'JEV_GATE'
                     AND status IN ('PLANNED', 'RETRY_WAIT', 'IN_FLIGHT')
             )
             OR
@@ -66,7 +66,10 @@ interface ProcessingBatchDao {
                 SELECT 1 FROM comments
                 WHERE importId = :importId
                     AND processingConfigVersion = :configVersion
-                    AND processingState IN ('READY_JEV', 'JEV_IN_PROGRESS', 'READY_GLM', 'GLM_IN_PROGRESS', 'RETRY_WAIT')
+                    AND (
+                        processingState IN ('READY_JEV', 'JEV_IN_PROGRESS')
+                        OR (processingState = 'RETRY_WAIT' AND currentStage = 'JEV_GATE')
+                    )
             )
         )
         """

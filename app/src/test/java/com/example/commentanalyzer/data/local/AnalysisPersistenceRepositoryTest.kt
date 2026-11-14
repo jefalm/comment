@@ -172,13 +172,15 @@ class AnalysisPersistenceRepositoryTest {
 
         val c1Updated = requireNotNull(database.commentDao().getCommentById("c1"))
         val c2Updated = requireNotNull(database.commentDao().getCommentById("c2"))
-        assertEquals(ProcessingState.READY_GLM, c1Updated.processingState)
+        assertEquals(ProcessingState.COMPLETED, c1Updated.processingState)
+        assertEquals(ProcessingStage.DONE, c1Updated.currentStage)
         assertEquals("praise", c1Updated.category)
         assertEquals(0.95, c1Updated.categoryConfidence!!, 0.001)
         assertEquals("positive", c1Updated.sentiment)
         assertEquals(0.9, c1Updated.sentimentConfidence!!, 0.001)
 
         assertEquals(ProcessingState.JEV_REJECTED, c2Updated.processingState)
+        assertEquals(ProcessingStage.JEV_GATE, c2Updated.currentStage)
         assertEquals("spam", c2Updated.category)
         assertEquals(0.88, c2Updated.categoryConfidence!!, 0.001)
         assertEquals("negative", c2Updated.sentiment)

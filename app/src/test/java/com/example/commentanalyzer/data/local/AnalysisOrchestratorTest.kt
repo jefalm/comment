@@ -149,29 +149,32 @@ class AnalysisOrchestratorTest {
     }
 
     @Test
-    fun passingCommentFlowsThroughLocalFilterJevAndGlmToTerminalState() = runBlocking {
+    fun passingCommentFlowsThroughLocalFilterAndJevDirectlyToCompleted() = runBlocking {
         addComment(comment("passed"))
 
-        orchestrator().run(IMPORT_ID, config())
+        val result = orchestrator().run(IMPORT_ID, config())
 
-        assertEquals(listOf("jev", "glm"), events)
+        assertEquals(listOf("jev"), events)
+        assertEquals(1, gateCalls)
+        assertEquals(0, glmCalls)
+        assertEquals(1, result.attemptedJevBatches)
+        assertEquals(0, result.attemptedGlmBatches)
+        assertFalse(result.remoteProcessingBlocked)
+
         val saved = requireNotNull(database.commentDao().getCommentById("passed"))
         assertEquals(ProcessingState.COMPLETED, saved.processingState)
         assertEquals(ProcessingStage.DONE, saved.currentStage)
         assertEquals("feedback", saved.category)
         assertEquals("positive", saved.sentiment)
+        assertEquals(0.9, saved.categoryConfidence!!, 0.001)
+        assertEquals(0.9, saved.sentimentConfidence!!, 0.001)
         assertEquals(
-            setOf(ResultStage.LOCAL_FILTER, ResultStage.JEV_GATE, ResultStage.GLM_ANALYSIS),
+            setOf(ResultStage.LOCAL_FILTER, ResultStage.JEV_GATE),
             database.analysisResultDao().getResultsForComment("passed", CONFIG_VERSION).map { it.stage }.toSet()
         )
-        assertEquals(2, database.processingBatchDao().let { dao ->
-            listOf(ProcessingStage.JEV_GATE, ProcessingStage.GLM_ANALYSIS).count { stage ->
-                // Both successful stage transitions are persisted as successful batches.
-                runBlocking {
-                    dao.getRunnableBatches(IMPORT_ID, CONFIG_VERSION, stage, now, 10).isEmpty()
-                }
-            }
-        })
+        // No GLM batch should exist
+        val runnableGlm = database.processingBatchDao().getRunnableBatches(IMPORT_ID, CONFIG_VERSION, ProcessingStage.GLM_ANALYSIS, now, 10)
+        assertTrue(runnableGlm.isEmpty())
     }
 
     @Test
@@ -183,60 +186,15 @@ class AnalysisOrchestratorTest {
         orchestrator.run(IMPORT_ID, config())
 
         assertEquals(1, gateCalls)
-        assertEquals(1, glmCalls)
-        assertEquals(3, database.analysisResultDao().getResultsForComment("once", CONFIG_VERSION).size)
-    }
-
-    @Test
-    fun cancellationAndRestartPreserveSuccessfulResultsWithoutDuplicates() = runBlocking {
-        addComment(comment("restart"))
-        cancelGlmOnce = true
-        val orchestrator = orchestrator()
-
-        try {
-            orchestrator.run(IMPORT_ID, config())
-            throw AssertionError("Expected the simulated worker cancellation")
-        } catch (_: CancellationException) {
-            Unit
-        }
-        assertEquals(1, resultsFor("restart", ResultStage.JEV_GATE).size)
-        assertTrue(resultsFor("restart", ResultStage.GLM_ANALYSIS).isEmpty())
-
-        now += 1
-        orchestrator.run(IMPORT_ID, config())
-
-        assertEquals(1, gateCalls)
-        assertEquals(2, glmCalls)
-        assertEquals(ProcessingState.COMPLETED, database.commentDao().getCommentById("restart")?.processingState)
-        assertEquals(1, resultsFor("restart", ResultStage.JEV_GATE).size)
-        assertEquals(1, resultsFor("restart", ResultStage.GLM_ANALYSIS).size)
-    }
-
-    @Test
-    fun failedValidatedGlmBatchDoesNotPersistPartialResults() = runBlocking {
-        addComment(comment("partial"))
-        glmError = "GLM_RESULT_ID_SET_MISMATCH"
-        partialGlmResponse = true
-
-        orchestrator().run(IMPORT_ID, config())
-
-        val persisted = database.analysisResultDao().getResultsForComment("partial", CONFIG_VERSION)
-        assertEquals(2, persisted.size)
-        assertEquals(setOf(ResultStage.LOCAL_FILTER, ResultStage.JEV_GATE), persisted.map { it.stage }.toSet())
-        assertTrue(resultsFor("partial", ResultStage.GLM_ANALYSIS).isEmpty())
-        assertEquals(
-            ProcessingState.FAILED_PERMANENT,
-            database.commentDao().getCommentById("partial")?.processingState
-        )
-        assertEquals(1, glmCalls)
-        assertTrue(events.contains("glm"))
+        assertEquals(0, glmCalls)
+        assertEquals(2, database.analysisResultDao().getResultsForComment("once", CONFIG_VERSION).size)
     }
 
     @Test
     fun readinessFalsePreventsAllRemoteProcessing() = runBlocking {
         addComment(comment("not-ready"))
 
-        orchestrator(readiness = { RemoteProcessingReadiness(true, false) })
+        orchestrator(readiness = { RemoteProcessingReadiness(hasOpenRouterKey = true, remoteProcessingConsent = false, hasTypeSafeKey = true) })
             .run(IMPORT_ID, config())
 
         assertEquals(0, gateCalls)
@@ -245,35 +203,9 @@ class AnalysisOrchestratorTest {
     }
 
     @Test
-    fun typeSafeUnavailableBlocksJevWhileReadyGlmMayProceed() = runBlocking {
-        // Run with both keys to advance a comment to READY_GLM
-        addComment(comment("passed-jev"))
-        orchestrator(readiness = {
-            RemoteProcessingReadiness(
-                hasOpenRouterKey = true,
-                remoteProcessingConsent = true,
-                hasTypeSafeKey = true
-            )
-        }).run(IMPORT_ID, config())
-        assertEquals(ProcessingState.COMPLETED, database.commentDao().getCommentById("passed-jev")?.processingState)
-
-        // Now add a new imported comment that needs JEV
+    fun typeSafeUnavailableBlocksJev() = runBlocking {
         addComment(comment("new-comment"))
-        // First run local filter only by omitting consent
-        orchestrator(readiness = {
-            RemoteProcessingReadiness(
-                hasOpenRouterKey = true,
-                remoteProcessingConsent = false,
-                hasTypeSafeKey = false
-            )
-        }).run(IMPORT_ID, config())
-        assertEquals(ProcessingState.READY_JEV, database.commentDao().getCommentById("new-comment")?.processingState)
-
-        // Reset gate and glm call counters
-        gateCalls = 0
-        glmCalls = 0
-
-        // With TypeSafe unavailable and OpenRouter available, READY_JEV must not be processed
+        // Local filter runs first
         val result = orchestrator(readiness = {
             RemoteProcessingReadiness(
                 hasOpenRouterKey = true,
@@ -285,6 +217,8 @@ class AnalysisOrchestratorTest {
         assertTrue(result.remoteProcessingBlocked)
         assertEquals(0, gateCalls)
         assertEquals(0, glmCalls)
+        assertEquals(0, result.attemptedJevBatches)
+        assertEquals(0, result.attemptedGlmBatches)
         assertEquals(ProcessingState.READY_JEV, database.commentDao().getCommentById("new-comment")?.processingState)
     }
 
@@ -296,7 +230,7 @@ class AnalysisOrchestratorTest {
         orchestrator().run(IMPORT_ID, legacyConfig)
 
         assertEquals(1, gateCalls)
-        assertEquals(1, glmCalls)
+        assertEquals(0, glmCalls)
         assertEquals(ProcessingState.COMPLETED, database.commentDao().getCommentById("legacy-model-comment")?.processingState)
     }
 
@@ -314,20 +248,6 @@ class AnalysisOrchestratorTest {
         assertEquals(now + expectedDelay, saved.nextAttemptAt)
         assertEquals("HTTP_429_RATE_LIMIT", saved.lastErrorCode)
         assertTrue(resultsFor("retry", ResultStage.JEV_GATE).isEmpty())
-    }
-
-    @Test
-    fun glmOutputTruncationIsRetriedWithoutPersistingPartialResults() = runBlocking {
-        addComment(comment("truncated"))
-        glmError = "GLM_OUTPUT_TRUNCATED"
-
-        orchestrator().run(IMPORT_ID, config())
-
-        val saved = requireNotNull(database.commentDao().getCommentById("truncated"))
-        assertEquals(ProcessingState.RETRY_WAIT, saved.processingState)
-        assertEquals("GLM_OUTPUT_TRUNCATED", saved.lastErrorCode)
-        assertEquals(2, database.analysisResultDao().getResultsForComment("truncated", CONFIG_VERSION).size)
-        assertTrue(resultsFor("truncated", ResultStage.GLM_ANALYSIS).isEmpty())
     }
 
     @Test

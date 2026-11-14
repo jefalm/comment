@@ -270,5 +270,42 @@ class SynthesisOrchestratorTest {
         orchestrator.synthesizeImport("import-en", 1L)
         assertEquals("en", fakeAnalyzer.lastContext?.targetLanguage)
     }
+
+    @Test
+    fun synthesisReceivesOriginalTextAndJevFieldsWithoutGlmAnalysisResult() = runBlocking {
+        database.commentDao().insertComments(
+            listOf(
+                CommentEntity(
+                    localId = "c-jev-only", sourceType = SourceType.YOUTUBE, sourceScopeKey = "v1", sourceCommentId = "1",
+                    parentSourceCommentId = null, videoId = "v1", importId = "import-jev", authorDisplayName = "U1",
+                    originalText = "This is the original comment text for synthesis", normalizedText = "this is the original comment text for synthesis", publishedAtEpochMillis = 100L,
+                    publishedAtPrecision = null, fingerprintVersion = 1, fingerprintSha256 = "a",
+                    processingState = com.example.commentanalyzer.data.local.entity.ProcessingState.COMPLETED,
+                    currentStage = com.example.commentanalyzer.data.local.entity.ProcessingStage.DONE,
+                    category = "praise", sentiment = "positive", relevanceScore = null,
+                    categoryConfidence = 0.94, sentimentConfidence = 0.88,
+                    processingConfigVersion = 1L,
+                    leaseOwner = null, leaseExpiresAt = null, nextAttemptAt = null, attemptCountLocal = 0,
+                    attemptCountJev = 0, attemptCountGlm = 0, lastErrorCode = null, lastErrorSummary = null,
+                    createdAt = 100L, updatedAt = 100L, likeCount = 42
+                )
+            )
+        )
+
+        orchestrator.synthesizeImport("import-jev", 1L)
+
+        val context = requireNotNull(fakeAnalyzer.lastContext)
+        assertEquals(1, context.evidenceItems.size)
+        val evidence = context.evidenceItems.first()
+        assertEquals("c-jev-only", evidence.commentId)
+        assertEquals("This is the original comment text for synthesis", evidence.text)
+        assertEquals("praise", evidence.category)
+        assertEquals("positive", evidence.sentiment)
+        assertEquals(0.94, evidence.categoryConfidence!!, 0.001)
+        assertEquals(0.88, evidence.sentimentConfidence!!, 0.001)
+        assertEquals(42, evidence.likeCount)
+        assertTrue(database.analysisResultDao().getResultsForComment("c-jev-only", 1L).isEmpty())
+    }
 }
+
 

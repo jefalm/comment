@@ -120,38 +120,86 @@ class ProcessingBatchDaoPendingWorkTest {
     }
 
     @Test
-    fun plannedBatchReturnsTrue() = runBlocking {
-        processingBatchDao.insertBatch(createBatch("b1", status = BatchStatus.PLANNED))
+    fun plannedJevBatchReturnsTrue() = runBlocking {
+        processingBatchDao.insertBatch(createBatch("b1", stage = ProcessingStage.JEV_GATE, status = BatchStatus.PLANNED))
         assertTrue(processingBatchDao.hasPendingAnalysisBatches(testImportId, testConfigVersion))
     }
 
     @Test
-    fun retryWaitBatchReturnsTrue() = runBlocking {
-        processingBatchDao.insertBatch(createBatch("b1", status = BatchStatus.RETRY_WAIT))
+    fun retryWaitJevBatchReturnsTrue() = runBlocking {
+        processingBatchDao.insertBatch(createBatch("b1", stage = ProcessingStage.JEV_GATE, status = BatchStatus.RETRY_WAIT))
         assertTrue(processingBatchDao.hasPendingAnalysisBatches(testImportId, testConfigVersion))
     }
 
     @Test
-    fun inFlightBatchReturnsTrue() = runBlocking {
-        processingBatchDao.insertBatch(createBatch("b1", status = BatchStatus.IN_FLIGHT))
+    fun inFlightJevBatchReturnsTrue() = runBlocking {
+        processingBatchDao.insertBatch(createBatch("b1", stage = ProcessingStage.JEV_GATE, status = BatchStatus.IN_FLIGHT))
         assertTrue(processingBatchDao.hasPendingAnalysisBatches(testImportId, testConfigVersion))
     }
 
     @Test
-    fun readyGlmCommentReturnsTrue() = runBlocking {
-        commentDao.insertComments(listOf(createComment("c1", state = ProcessingState.READY_GLM)))
+    fun readyJevCommentReturnsTrue() = runBlocking {
+        commentDao.insertComments(listOf(createComment("c1", state = ProcessingState.READY_JEV, stage = ProcessingStage.JEV_GATE)))
         assertTrue(processingBatchDao.hasPendingAnalysisBatches(testImportId, testConfigVersion))
+    }
+
+    @Test
+    fun jevInProgressCommentReturnsTrue() = runBlocking {
+        commentDao.insertComments(listOf(createComment("c1", state = ProcessingState.JEV_IN_PROGRESS, stage = ProcessingStage.JEV_GATE)))
+        assertTrue(processingBatchDao.hasPendingAnalysisBatches(testImportId, testConfigVersion))
+    }
+
+    @Test
+    fun retryWaitJevCommentReturnsTrue() = runBlocking {
+        commentDao.insertComments(listOf(createComment("c1", state = ProcessingState.RETRY_WAIT, stage = ProcessingStage.JEV_GATE)))
+        assertTrue(processingBatchDao.hasPendingAnalysisBatches(testImportId, testConfigVersion))
+    }
+
+    @Test
+    fun legacyGlmPlannedBatchReturnsFalse() = runBlocking {
+        processingBatchDao.insertBatch(createBatch("b1", stage = ProcessingStage.GLM_ANALYSIS, status = BatchStatus.PLANNED))
+        assertFalse(processingBatchDao.hasPendingAnalysisBatches(testImportId, testConfigVersion))
+    }
+
+    @Test
+    fun legacyGlmRetryWaitBatchReturnsFalse() = runBlocking {
+        processingBatchDao.insertBatch(createBatch("b1", stage = ProcessingStage.GLM_ANALYSIS, status = BatchStatus.RETRY_WAIT))
+        assertFalse(processingBatchDao.hasPendingAnalysisBatches(testImportId, testConfigVersion))
+    }
+
+    @Test
+    fun legacyGlmInFlightBatchReturnsFalse() = runBlocking {
+        processingBatchDao.insertBatch(createBatch("b1", stage = ProcessingStage.GLM_ANALYSIS, status = BatchStatus.IN_FLIGHT))
+        assertFalse(processingBatchDao.hasPendingAnalysisBatches(testImportId, testConfigVersion))
+    }
+
+    @Test
+    fun legacyReadyGlmCommentReturnsFalse() = runBlocking {
+        commentDao.insertComments(listOf(createComment("c1", state = ProcessingState.READY_GLM, stage = ProcessingStage.GLM_ANALYSIS)))
+        assertFalse(processingBatchDao.hasPendingAnalysisBatches(testImportId, testConfigVersion))
+    }
+
+    @Test
+    fun legacyGlmInProgressCommentReturnsFalse() = runBlocking {
+        commentDao.insertComments(listOf(createComment("c1", state = ProcessingState.GLM_IN_PROGRESS, stage = ProcessingStage.GLM_ANALYSIS)))
+        assertFalse(processingBatchDao.hasPendingAnalysisBatches(testImportId, testConfigVersion))
+    }
+
+    @Test
+    fun legacyGlmRetryWaitCommentReturnsFalse() = runBlocking {
+        commentDao.insertComments(listOf(createComment("c1", state = ProcessingState.RETRY_WAIT, stage = ProcessingStage.GLM_ANALYSIS)))
+        assertFalse(processingBatchDao.hasPendingAnalysisBatches(testImportId, testConfigVersion))
     }
 
     @Test
     fun terminalOnlyStatesReturnsFalse() = runBlocking {
-        processingBatchDao.insertBatch(createBatch("b1", status = BatchStatus.SUCCEEDED))
-        processingBatchDao.insertBatch(createBatch("b2", status = BatchStatus.FAILED_PERMANENT))
+        processingBatchDao.insertBatch(createBatch("b1", stage = ProcessingStage.JEV_GATE, status = BatchStatus.SUCCEEDED))
+        processingBatchDao.insertBatch(createBatch("b2", stage = ProcessingStage.JEV_GATE, status = BatchStatus.FAILED_PERMANENT))
         commentDao.insertComments(
             listOf(
-                createComment("c1", state = ProcessingState.COMPLETED),
-                createComment("c2", state = ProcessingState.FAILED_PERMANENT),
-                createComment("c3", state = ProcessingState.LOCAL_REJECTED)
+                createComment("c1", state = ProcessingState.COMPLETED, stage = ProcessingStage.DONE),
+                createComment("c2", state = ProcessingState.FAILED_PERMANENT, stage = ProcessingStage.JEV_GATE),
+                createComment("c3", state = ProcessingState.LOCAL_REJECTED, stage = ProcessingStage.LOCAL_FILTER)
             )
         )
         assertFalse(processingBatchDao.hasPendingAnalysisBatches(testImportId, testConfigVersion))

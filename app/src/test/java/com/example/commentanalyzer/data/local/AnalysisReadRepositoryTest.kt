@@ -67,10 +67,10 @@ class AnalysisReadRepositoryTest {
         )
         database.analysisResultDao().insertResults(
             listOf(
-                result("glm-valid", "completed", 7, ResultStage.GLM_ANALYSIS),
+                result("jev-valid", "completed", 7, ResultStage.JEV_GATE),
                 result("jev-only", "jev", 7, ResultStage.JEV_GATE, category = "not-a-category"),
-                result("glm-other-config", "other-config", 8, ResultStage.GLM_ANALYSIS),
-                result("glm-other-import", "other-import", 7, ResultStage.GLM_ANALYSIS)
+                result("jev-other-config", "other-config", 8, ResultStage.JEV_GATE),
+                result("jev-other-import", "other-import", 7, ResultStage.JEV_GATE)
             )
         )
 
@@ -158,7 +158,7 @@ class AnalysisReadRepositoryTest {
             )
         )
         database.analysisResultDao().insertResult(
-            result("glm-completed", "completed-valid", 7, ResultStage.GLM_ANALYSIS)
+            result("jev-completed", "completed-valid", 7, ResultStage.JEV_GATE)
         )
 
         val summary = repository.observeSummary("import-a", 7).first()

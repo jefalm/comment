@@ -65,9 +65,9 @@ class ProductionAnalysisIntegrationTest {
         container.analysisOrchestrator.run(IMPORT_ID, config())
 
         assertEquals(1, jevService.calls)
-        assertEquals(1, glmService.calls)
+        assertEquals(0, glmService.calls)
         assertEquals(
-            setOf(ResultStage.LOCAL_FILTER, ResultStage.JEV_GATE, ResultStage.GLM_ANALYSIS),
+            setOf(ResultStage.LOCAL_FILTER, ResultStage.JEV_GATE),
             database.analysisResultDao().getResultsForComment("complete", CONFIG_VERSION)
                 .map { it.stage }.toSet()
         )
@@ -101,7 +101,7 @@ class ProductionAnalysisIntegrationTest {
     }
 
     @Test
-    fun jevRejectionDoesNotReachGlm() = runBlocking {
+    fun jevRejectionDoesNotReachCompletedState() = runBlocking {
         addComment(comment("rejected"))
         jevService.probability = 0.1
 
@@ -116,27 +116,20 @@ class ProductionAnalysisIntegrationTest {
     }
 
     @Test
-    fun invalidGlmBatchDoesNotPersistAnyGlmResults() = runBlocking {
+    fun noGlmBatchIsExecutedOnJevSuccess() = runBlocking {
         addComment(comment("batch-a"))
         addComment(comment("batch-b"))
-        glmService.omitLastResult = true
 
         container().analysisOrchestrator.run(IMPORT_ID, config())
 
-        assertEquals(2, glmService.calls)
+        assertEquals(2, jevService.calls)
+        assertEquals(0, glmService.calls)
         assertEquals(
-            0,
-            database.analysisResultDao().getResultsForComment("batch-a", CONFIG_VERSION)
-                .count { it.stage == ResultStage.GLM_ANALYSIS } +
-                database.analysisResultDao().getResultsForComment("batch-b", CONFIG_VERSION)
-                    .count { it.stage == ResultStage.GLM_ANALYSIS }
-        )
-        assertEquals(
-            ProcessingState.FAILED_PERMANENT,
+            ProcessingState.COMPLETED,
             database.commentDao().getCommentById("batch-a")?.processingState
         )
         assertEquals(
-            ProcessingState.FAILED_PERMANENT,
+            ProcessingState.COMPLETED,
             database.commentDao().getCommentById("batch-b")?.processingState
         )
     }

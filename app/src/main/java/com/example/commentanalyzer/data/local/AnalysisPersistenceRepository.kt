@@ -305,33 +305,22 @@ class AnalysisPersistenceRepository(
             val validated = requireNotNull(byCommentId[comment.localId])
             val probability = validated.probability
             val (state, stage) = when {
-                probability >= passThreshold -> ProcessingState.READY_GLM to ProcessingStage.GLM_ANALYSIS
+                probability >= passThreshold -> ProcessingState.COMPLETED to ProcessingStage.DONE
                 probability <= rejectThreshold -> ProcessingState.JEV_REJECTED to ProcessingStage.JEV_GATE
                 else -> ProcessingState.MANUAL_REVIEW to ProcessingStage.JEV_GATE
             }
-            if (batch.processingConfigVersion >= 2L) {
-                comment.copy(
-                    processingState = state,
-                    currentStage = stage,
-                    category = validated.category,
-                    sentiment = validated.sentiment,
-                    categoryConfidence = validated.categoryConfidence,
-                    sentimentConfidence = validated.sentimentConfidence,
-                    leaseOwner = null,
-                    leaseExpiresAt = null,
-                    nextAttemptAt = null,
-                    updatedAt = clock()
-                )
-            } else {
-                comment.copy(
-                    processingState = state,
-                    currentStage = stage,
-                    leaseOwner = null,
-                    leaseExpiresAt = null,
-                    nextAttemptAt = null,
-                    updatedAt = clock()
-                )
-            }
+            comment.copy(
+                processingState = state,
+                currentStage = stage,
+                category = validated.category ?: comment.category,
+                sentiment = validated.sentiment ?: comment.sentiment,
+                categoryConfidence = validated.categoryConfidence ?: comment.categoryConfidence,
+                sentimentConfidence = validated.sentimentConfidence ?: comment.sentimentConfidence,
+                leaseOwner = null,
+                leaseExpiresAt = null,
+                nextAttemptAt = null,
+                updatedAt = clock()
+            )
         }
         persistSuccess(
             batch = batch,
