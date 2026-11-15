@@ -45,8 +45,7 @@ class SynthesisOrchestratorTest {
                     themes = emptyList(),
                     agreements = emptyList(),
                     contrastingPerspectives = emptyList(),
-                    notableInsights = emptyList(),
-                    actionableFollowUps = emptyList()
+                    notableInsights = emptyList()
                 ),
                 error = null,
                 modelRequested = "z-ai/glm-5.3-flash",

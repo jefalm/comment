@@ -2,7 +2,6 @@ package com.example.commentanalyzer.network.adapter
 
 import com.example.commentanalyzer.domain.analysis.SynthesisContext
 import com.example.commentanalyzer.domain.analysis.SynthesisDeepAnalyzer
-import com.example.commentanalyzer.domain.model.SynthesisActionableFollowUp
 import com.example.commentanalyzer.domain.model.SynthesisAgreement
 import com.example.commentanalyzer.domain.model.SynthesisBatchResult
 import com.example.commentanalyzer.domain.model.SynthesisContrastingPerspective
@@ -45,12 +44,12 @@ class OpenRouterGlmSynthesisAdapter(
             "pt-BR" -> "Write every human-readable synthesis field (executiveSummary, themes[].title, themes[].description, " +
                 "agreements[].topic, agreements[].description, contrastingPerspectives[].perspectiveA, " +
                 "contrastingPerspectives[].perspectiveB, contrastingPerspectives[].description, " +
-                "notableInsights[].insight, actionableFollowUps[].action, actionableFollowUps[].rationale) " +
+                "notableInsights[].insight) " +
                 "in Brazilian Portuguese. Keep JSON keys, IDs, schema values, and machine-readable structure unchanged."
             else -> "Write every human-readable synthesis field (executiveSummary, themes[].title, themes[].description, " +
                 "agreements[].topic, agreements[].description, contrastingPerspectives[].perspectiveA, " +
                 "contrastingPerspectives[].perspectiveB, contrastingPerspectives[].description, " +
-                "notableInsights[].insight, actionableFollowUps[].action, actionableFollowUps[].rationale) " +
+                "notableInsights[].insight) " +
                 "in English. Keep JSON keys, IDs, schema values, and machine-readable structure unchanged."
         }
 
@@ -82,14 +81,17 @@ class OpenRouterGlmSynthesisAdapter(
                     role = "system",
                     content = "You are a bounded cross-comment synthesis engine. JEV owns per-comment classifications. " +
                         "Do not recalculate totals. Use only the provided authoritative category and sentiment distributions, " +
-                        "and cite comment IDs strictly from the supplied evidence comments. $languageInstruction Return schemaVersion 2."
+                        "and cite comment IDs strictly from the supplied evidence comments. " +
+                        "Do not include comment IDs, evidence IDs, UUIDs, bracketed citation IDs, or other internal identifiers in human-readable prose. " +
+                        "Keep evidence references only in the dedicated structured citation/evidence fields. " +
+                        "$languageInstruction Return schemaVersion 2."
                 ),
                 GlmMessage(
                     role = "user",
                     content = gson.toJson(promptPayload)
                 )
             ),
-            maxTokens = 4096,
+            maxTokens = 8192,
             responseFormat = GlmResponseFormat(
                 jsonSchema = GlmJsonSchema(
                     name = "cross_comment_synthesis",
@@ -255,33 +257,52 @@ class OpenRouterGlmSynthesisAdapter(
             if (item.keySet() != INSIGHT_KEYS) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
             val ins = item.get("insight").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
             val cited = parseCitedIds(item.get("citedCommentIds"), evidenceIds) ?: return ValidationResult(error = "GLM_UNKNOWN_EVIDENCE_ID")
-            insights += SynthesisNotableInsight(ins, cited)
-        }
-
-        // Actionable Follow Ups
-        val rawFollowUps = obj.get("actionableFollowUps")
-        if (rawFollowUps == null || !rawFollowUps.isJsonArray) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-        val followUps = mutableListOf<SynthesisActionableFollowUp>()
-        for (el in rawFollowUps.asJsonArray) {
-            if (!el.isJsonObject) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val item = el.asJsonObject
-            if (item.keySet() != FOLLOWUP_KEYS) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val action = item.get("action").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val rationale = item.get("rationale").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val cited = parseCitedIds(item.get("citedCommentIds"), evidenceIds) ?: return ValidationResult(error = "GLM_UNKNOWN_EVIDENCE_ID")
-            followUps += SynthesisActionableFollowUp(action, rationale, cited)
+            insights += SynthesisNotableInsight(
+                insight = sanitizeProse(ins, evidenceIds),
+                citedCommentIds = cited
+            )
         }
 
         val synthesisResult = SynthesisResult(
             schemaVersion = SCHEMA_VERSION,
-            executiveSummary = execSummary,
-            themes = themes,
-            agreements = agreements,
-            contrastingPerspectives = contrasting,
-            notableInsights = insights,
-            actionableFollowUps = followUps
+            executiveSummary = sanitizeProse(execSummary, evidenceIds),
+            themes = themes.map {
+                it.copy(
+                    title = sanitizeProse(it.title, evidenceIds),
+                    description = sanitizeProse(it.description, evidenceIds)
+                )
+            },
+            agreements = agreements.map {
+                it.copy(
+                    topic = sanitizeProse(it.topic, evidenceIds),
+                    description = sanitizeProse(it.description, evidenceIds)
+                )
+            },
+            contrastingPerspectives = contrasting.map {
+                it.copy(
+                    perspectiveA = sanitizeProse(it.perspectiveA, evidenceIds),
+                    perspectiveB = sanitizeProse(it.perspectiveB, evidenceIds),
+                    description = sanitizeProse(it.description, evidenceIds)
+                )
+            },
+            notableInsights = insights
         )
         return ValidationResult(synthesis = synthesisResult)
+    }
+
+    private fun sanitizeProse(text: String, evidenceIds: Set<String>): String {
+        if (text.isBlank() || evidenceIds.isEmpty()) return text
+        var result = text
+        for (id in evidenceIds) {
+            if (id.isNotEmpty() && result.contains(id)) {
+                result = result.replace(Regex("""\s*\[\s*${Regex.escape(id)}\s*]"""), "")
+                result = result.replace(Regex("""\s*\(\s*${Regex.escape(id)}\s*\)"""), "")
+                result = result.replace(id, "")
+            }
+        }
+        return result.replace(Regex("""\s+([.,;:!?])"""), "$1")
+            .replace(Regex(""" {2,}"""), " ")
+            .trim()
     }
 
     private fun parseCitedIds(element: JsonElement?, evidenceIds: Set<String>): List<String>? {
@@ -335,14 +356,12 @@ class OpenRouterGlmSynthesisAdapter(
             "themes",
             "agreements",
             "contrastingPerspectives",
-            "notableInsights",
-            "actionableFollowUps"
+            "notableInsights"
         )
         private val THEME_KEYS = setOf("title", "description", "citedCommentIds")
         private val AGREEMENT_KEYS = setOf("topic", "description", "citedCommentIds")
         private val CONTRASTING_KEYS = setOf("perspectiveA", "perspectiveB", "description", "citedCommentIds")
         private val INSIGHT_KEYS = setOf("insight", "citedCommentIds")
-        private val FOLLOWUP_KEYS = setOf("action", "rationale", "citedCommentIds")
 
         private val responseSchema: Map<String, Any> = mapOf(
             "type" to "object",
@@ -399,19 +418,6 @@ class OpenRouterGlmSynthesisAdapter(
                         "required" to INSIGHT_KEYS.toList(),
                         "properties" to mapOf(
                             "insight" to mapOf("type" to "string", "minLength" to 1),
-                            "citedCommentIds" to mapOf("type" to "array", "items" to mapOf("type" to "string", "minLength" to 1))
-                        )
-                    )
-                ),
-                "actionableFollowUps" to mapOf(
-                    "type" to "array",
-                    "items" to mapOf(
-                        "type" to "object",
-                        "additionalProperties" to false,
-                        "required" to FOLLOWUP_KEYS.toList(),
-                        "properties" to mapOf(
-                            "action" to mapOf("type" to "string", "minLength" to 1),
-                            "rationale" to mapOf("type" to "string", "minLength" to 1),
                             "citedCommentIds" to mapOf("type" to "array", "items" to mapOf("type" to "string", "minLength" to 1))
                         )
                     )

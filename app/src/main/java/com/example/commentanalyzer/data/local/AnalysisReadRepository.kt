@@ -15,7 +15,10 @@ import kotlinx.coroutines.flow.map
 
 data class AnalysisImportOption(
     val importId: String,
-    val title: String
+    val title: String,
+    val videoTitle: String? = null,
+    val channelTitle: String? = null,
+    val videoId: String? = null
 )
 
 data class AnalysisSummary(
@@ -41,7 +44,10 @@ class AnalysisReadRepository(
                     importId = import.importId,
                     title = import.videoTitle?.takeIf(String::isNotBlank)
                         ?: import.videoId?.takeIf(String::isNotBlank)
-                        ?: "Imported comments"
+                        ?: "Imported comments",
+                    videoTitle = import.videoTitle?.takeIf(String::isNotBlank),
+                    channelTitle = import.channelTitle?.takeIf(String::isNotBlank),
+                    videoId = import.videoId?.takeIf(String::isNotBlank)
                 )
             }
         }

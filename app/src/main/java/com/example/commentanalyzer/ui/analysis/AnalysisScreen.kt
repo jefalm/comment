@@ -22,12 +22,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.commentanalyzer.R
 import com.example.commentanalyzer.data.local.AnalysisSummary
-import com.example.commentanalyzer.domain.model.SynthesisResult
+import com.example.commentanalyzer.domain.analysis.formatAnalysisForClipboard
 import java.util.Locale
 
 @Composable
@@ -38,6 +40,9 @@ fun AnalysisScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val persistedWorkInProgress = (state.summary?.processing?.inProgress ?: 0L) > 0
+    val selectedImport = state.imports.firstOrNull { it.importId == state.selectedImportId }
+    val clipboardManager = LocalClipboardManager.current
+    var showCopiedConfirmation by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -97,6 +102,31 @@ fun AnalysisScreen(
                         message == AnalysisActionMessage.NOT_READY ||
                         message == AnalysisActionMessage.REMOTE_BLOCKED
                     ) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                )
+            }
+            val synthesis = state.summary?.synthesis
+            if (synthesis != null) {
+                OutlinedButton(
+                    onClick = {
+                        val report = formatAnalysisForClipboard(
+                            videoTitle = selectedImport?.videoTitle,
+                            publisher = selectedImport?.channelTitle,
+                            videoId = selectedImport?.videoId,
+                            synthesis = synthesis
+                        )
+                        clipboardManager.setText(AnnotatedString(report))
+                        showCopiedConfirmation = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.analysis_copy_action))
+                }
+            }
+            if (showCopiedConfirmation) {
+                Text(
+                    stringResource(R.string.analysis_copied_confirmation),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
             when {
@@ -404,56 +434,6 @@ internal fun AnalysisSummaryContent(
                                         onClick = { importId?.let { onNavigateToComments(it, insight.citedCommentIds.first()) } }
                                     ) {
                                         Text("View evidence (${insight.citedCommentIds.size})")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 7. ACTIONABLE FOLLOW-UPS
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text("Actionable Follow-Ups", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            if (synthesis.actionableFollowUps.isEmpty()) {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        "No actionable follow-ups recorded.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-            } else {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        synthesis.actionableFollowUps.forEachIndexed { index, followUp ->
-                            if (index > 0) {
-                                androidx.compose.material3.HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                                )
-                            }
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("${index + 1}. ${followUp.action}", style = MaterialTheme.typography.titleSmall)
-                                Text(followUp.rationale, style = MaterialTheme.typography.bodyMedium)
-                                if (followUp.citedCommentIds.isNotEmpty()) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.End
-                                    ) {
-                                        OutlinedButton(
-                                            onClick = { importId?.let { onNavigateToComments(it, followUp.citedCommentIds.first()) } }
-                                        ) {
-                                            Text("View evidence (${followUp.citedCommentIds.size})")
-                                        }
                                     }
                                 }
                             }

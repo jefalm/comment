@@ -122,7 +122,7 @@ class OpenRouterGlmSynthesisAdapterTest {
 
         assertNull(result.error)
         assertNotNull(result.synthesis)
-        assertEquals(4096, sent.get("max_tokens").asInt)
+        assertEquals(8192, sent.get("max_tokens").asInt)
         assertEquals(2, userContent.getAsJsonObject("authoritativeContext").get("totalRelevantComments").asInt)
         val evidenceArray = userContent.getAsJsonArray("evidenceComments")
         assertEquals(2, evidenceArray.size())
@@ -251,6 +251,85 @@ class OpenRouterGlmSynthesisAdapterTest {
         assertNotNull(userContent.get("evidenceComments"))
     }
 
+    @Test
+    fun synthesisSystemInstructionExplicitlyForbidsIdentifiersInProse() = runBlocking {
+        server.enqueue(response(validSynthesisJson("c-01")))
+        val context = SynthesisContext(
+            importId = "imp-1",
+            configVersion = 1L,
+            totalRelevantComments = 1,
+            categoryDistribution = mapOf("praise" to 1),
+            sentimentDistribution = mapOf("positive" to 1),
+            evidenceItems = listOf(
+                com.example.commentanalyzer.domain.analysis.SynthesisEvidenceInput(
+                    "c-01", "Great video!", "praise", "positive", 10, 0.9, 0.9
+                )
+            )
+        )
+
+        val result = adapter().synthesize(context)
+        assertNull(result.error)
+        assertNotNull(result.synthesis)
+
+        val recorded = server.takeRequest()
+        val sent = JsonParser.parseString(recorded.body!!.readUtf8()).asJsonObject
+        val messages = sent.getAsJsonArray("messages")
+        val systemMessage = messages.map { it.asJsonObject }.first { it.get("role").asString == "system" }
+        val systemContent = systemMessage.get("content").asString
+        assertTrue(systemContent.contains("Do not include comment IDs, evidence IDs, UUIDs, bracketed citation IDs, or other internal identifiers in human-readable prose."))
+        assertTrue(systemContent.contains("Keep evidence references only in the dedicated structured citation/evidence fields."))
+    }
+
+    @Test
+    fun accidentalCommentIdsInProseAreSanitizedWhileStructuredIdsArePreserved() = runBlocking {
+        val jsonWithIdsInProse = """{
+            "schemaVersion": 2,
+            "executiveSummary": "Several users praised the feature [c-01] while others raised concerns [c-02].",
+            "themes": [{"title": "Theme (c-01)", "description": "Description referring to c-02 directly.", "citedCommentIds": ["c-01", "c-02"]}],
+            "agreements": [{"topic": "Agreement [c-01]", "description": "Agreement text [c-02]", "citedCommentIds": ["c-01"]}],
+            "contrastingPerspectives": [{"perspectiveA": "Persp A [c-01]", "perspectiveB": "Persp B [c-02]", "description": "Diff c-01 vs c-02", "citedCommentIds": ["c-01", "c-02"]}],
+            "notableInsights": [{"insight": "Insight mentioning c-01", "citedCommentIds": ["c-01"]}]
+        }"""
+        server.enqueue(response(jsonWithIdsInProse))
+        val context = SynthesisContext(
+            importId = "imp-1",
+            configVersion = 1L,
+            totalRelevantComments = 2,
+            categoryDistribution = mapOf("praise" to 1, "criticism" to 1),
+            sentimentDistribution = mapOf("positive" to 1, "negative" to 1),
+            evidenceItems = listOf(
+                com.example.commentanalyzer.domain.analysis.SynthesisEvidenceInput(
+                    "c-01", "Praise", "praise", "positive", 5, 0.9, 0.9
+                ),
+                com.example.commentanalyzer.domain.analysis.SynthesisEvidenceInput(
+                    "c-02", "Criticism", "criticism", "negative", 3, 0.9, 0.9
+                )
+            )
+        )
+
+        val result = adapter().synthesize(context)
+        assertNull(result.error)
+        val synthesis = result.synthesis
+        assertNotNull(synthesis)
+
+        // Prose fields must not contain comment IDs
+        assertEquals("Several users praised the feature while others raised concerns.", synthesis!!.executiveSummary)
+        assertEquals("Theme", synthesis.themes[0].title)
+        assertEquals("Description referring to directly.", synthesis.themes[0].description)
+        assertEquals("Agreement", synthesis.agreements[0].topic)
+        assertEquals("Agreement text", synthesis.agreements[0].description)
+        assertEquals("Persp A", synthesis.contrastingPerspectives[0].perspectiveA)
+        assertEquals("Persp B", synthesis.contrastingPerspectives[0].perspectiveB)
+        assertEquals("Diff vs", synthesis.contrastingPerspectives[0].description)
+        assertEquals("Insight mentioning", synthesis.notableInsights[0].insight)
+
+        // Structured citation/evidence IDs remain intact
+        assertEquals(listOf("c-01", "c-02"), synthesis.themes[0].citedCommentIds)
+        assertEquals(listOf("c-01"), synthesis.agreements[0].citedCommentIds)
+        assertEquals(listOf("c-01", "c-02"), synthesis.contrastingPerspectives[0].citedCommentIds)
+        assertEquals(listOf("c-01"), synthesis.notableInsights[0].citedCommentIds)
+    }
+
     private fun adapter(): OpenRouterGlmSynthesisAdapter {
         val tokenProvider = { "sk-test-key" }
         return OpenRouterGlmSynthesisAdapter(
@@ -276,8 +355,7 @@ class OpenRouterGlmSynthesisAdapterTest {
             "themes": [{"title": "Theme 1", "description": "Desc", "citedCommentIds": [$citedJson]}],
             "agreements": [{"topic": "Topic 1", "description": "Desc", "citedCommentIds": [$citedJson]}],
             "contrastingPerspectives": [{"perspectiveA": "A", "perspectiveB": "B", "description": "Desc", "citedCommentIds": [$citedJson]}],
-            "notableInsights": [{"insight": "Insight", "citedCommentIds": [$citedJson]}],
-            "actionableFollowUps": [{"action": "Action", "rationale": "Rationale", "citedCommentIds": [$citedJson]}]
+            "notableInsights": [{"insight": "Insight", "citedCommentIds": [$citedJson]}]
         }"""
     }
 }

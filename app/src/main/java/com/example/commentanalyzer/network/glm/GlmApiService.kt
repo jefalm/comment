@@ -24,9 +24,9 @@ interface GlmApiService {
             okHttpClient: OkHttpClient? = null
         ): GlmApiService {
             val client = (okHttpClient?.newBuilder() ?: OkHttpClient.Builder())
-                .connectTimeout(20, TimeUnit.SECONDS)
-                .readTimeout(90, TimeUnit.SECONDS)
-                .callTimeout(180, TimeUnit.SECONDS)
+                .connectTimeout(40, TimeUnit.SECONDS)
+                .readTimeout(180, TimeUnit.SECONDS)
+                .callTimeout(360, TimeUnit.SECONDS)
                 .addInterceptor(OpenRouterHeaderInterceptor(tokenProvider, attributionConfig))
                 .build()
 

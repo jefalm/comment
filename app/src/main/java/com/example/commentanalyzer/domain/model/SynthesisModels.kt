@@ -24,20 +24,13 @@ data class SynthesisNotableInsight(
     val citedCommentIds: List<String>
 )
 
-data class SynthesisActionableFollowUp(
-    val action: String,
-    val rationale: String,
-    val citedCommentIds: List<String>
-)
-
 data class SynthesisResult(
     val schemaVersion: Int,
     val executiveSummary: String,
     val themes: List<SynthesisTheme>,
     val agreements: List<SynthesisAgreement>,
     val contrastingPerspectives: List<SynthesisContrastingPerspective>,
-    val notableInsights: List<SynthesisNotableInsight>,
-    val actionableFollowUps: List<SynthesisActionableFollowUp>
+    val notableInsights: List<SynthesisNotableInsight>
 )
 
 data class SynthesisBatchResult(

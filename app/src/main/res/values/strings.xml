@@ -32,6 +32,8 @@
     <string name="analysis_known_cost">Known cost</string>
     <string name="analysis_unknown">Unknown</string>
     <string name="analysis_start">Analyze comments</string>
+    <string name="analysis_copy_action">Copy analysis</string>
+    <string name="analysis_copied_confirmation">Copied to clipboard</string>
     <string name="analysis_readiness_required">Add an OpenRouter API key and enable remote processing consent in Settings to analyze comments.</string>
     <string name="analysis_running">Analyzing comments…</string>
     <string name="analysis_no_eligible_comments">No eligible comments required further analysis.</string>
