@@ -3,6 +3,7 @@ package com.example.commentanalyzer.network.glm
 import com.example.commentanalyzer.network.OpenRouterAttributionConfig
 import com.example.commentanalyzer.network.OpenRouterHeaderInterceptor
 import com.example.commentanalyzer.network.dto.glm.GlmRequest
+import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
 import okhttp3.ResponseBody
 import retrofit2.Response
@@ -23,6 +24,9 @@ interface GlmApiService {
             okHttpClient: OkHttpClient? = null
         ): GlmApiService {
             val client = (okHttpClient?.newBuilder() ?: OkHttpClient.Builder())
+                .connectTimeout(20, TimeUnit.SECONDS)
+                .readTimeout(90, TimeUnit.SECONDS)
+                .callTimeout(180, TimeUnit.SECONDS)
                 .addInterceptor(OpenRouterHeaderInterceptor(tokenProvider, attributionConfig))
                 .build()
 

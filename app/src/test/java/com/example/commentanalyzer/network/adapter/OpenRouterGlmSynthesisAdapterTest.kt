@@ -122,6 +122,7 @@ class OpenRouterGlmSynthesisAdapterTest {
 
         assertNull(result.error)
         assertNotNull(result.synthesis)
+        assertEquals(4096, sent.get("max_tokens").asInt)
         assertEquals(2, userContent.getAsJsonObject("authoritativeContext").get("totalRelevantComments").asInt)
         val evidenceArray = userContent.getAsJsonArray("evidenceComments")
         assertEquals(2, evidenceArray.size())

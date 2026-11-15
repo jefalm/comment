@@ -50,7 +50,15 @@ class AnalysisWorker(
             return Result.retry()
         }
 
-        container.synthesisOrchestrator.synthesizeImport(importId, configVersion)
+        val synthesisResult =
+            container.synthesisOrchestrator.synthesizeImport(importId, configVersion)
+        if (synthesisResult.error != null || synthesisResult.synthesis == null) {
+            return Result.failure(
+                Data.Builder()
+                    .putString(KEY_ERROR, synthesisResult.error ?: "GLM_SYNTHESIS_FAILED")
+                    .build()
+            )
+        }
 
         return Result.success(
             Data.Builder()

@@ -89,6 +89,7 @@ class OpenRouterGlmSynthesisAdapter(
                     content = gson.toJson(promptPayload)
                 )
             ),
+            maxTokens = 4096,
             responseFormat = GlmResponseFormat(
                 jsonSchema = GlmJsonSchema(
                     name = "cross_comment_synthesis",
