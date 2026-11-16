@@ -74,24 +74,29 @@ class OpenRouterGlmSynthesisAdapter(
             }
         )
 
+        val messages = listOf(
+            GlmMessage(
+                role = "system",
+                content = "You are a bounded cross-comment synthesis engine. JEV owns per-comment classifications. " +
+                    "Do not recalculate totals. Use only the provided authoritative category and sentiment distributions, " +
+                    "and cite comment IDs strictly from the supplied evidence comments. " +
+                    "Do not include comment IDs, evidence IDs, UUIDs, bracketed citation IDs, or other internal identifiers in human-readable prose. " +
+                    "Keep evidence references only in the dedicated structured citation/evidence fields. " +
+                    "$languageInstruction Return schemaVersion 2."
+            ),
+            GlmMessage(
+                role = "user",
+                content = gson.toJson(promptPayload)
+            )
+        )
+
+        val estimatedInputTokens = estimateInputTokens(messages)
+        val maxTokens = calculateMaxTokens(estimatedInputTokens)
+
         val request = GlmRequest(
             model = requestedModel,
-            messages = listOf(
-                GlmMessage(
-                    role = "system",
-                    content = "You are a bounded cross-comment synthesis engine. JEV owns per-comment classifications. " +
-                        "Do not recalculate totals. Use only the provided authoritative category and sentiment distributions, " +
-                        "and cite comment IDs strictly from the supplied evidence comments. " +
-                        "Do not include comment IDs, evidence IDs, UUIDs, bracketed citation IDs, or other internal identifiers in human-readable prose. " +
-                        "Keep evidence references only in the dedicated structured citation/evidence fields. " +
-                        "$languageInstruction Return schemaVersion 2."
-                ),
-                GlmMessage(
-                    role = "user",
-                    content = gson.toJson(promptPayload)
-                )
-            ),
-            maxTokens = 8192,
+            messages = messages,
+            maxTokens = maxTokens,
             responseFormat = GlmResponseFormat(
                 jsonSchema = GlmJsonSchema(
                     name = "cross_comment_synthesis",
@@ -347,8 +352,20 @@ class OpenRouterGlmSynthesisAdapter(
 
     companion object {
         const val MODEL = "z-ai/glm-5.3-flash"
+        const val MAX_CONTEXT_TOKENS = 1_048_576
+        const val MAX_OUTPUT_TOKENS = 131_072
         private const val SCHEMA_VERSION = 2
         private val gson = Gson()
+
+        fun estimateInputTokens(messages: List<GlmMessage>): Int {
+            val totalChars = messages.sumOf { it.content.length }
+            return (totalChars / 4).coerceAtLeast(1)
+        }
+
+        fun calculateMaxTokens(estimatedInputTokens: Int): Int {
+            val availableOutput = MAX_CONTEXT_TOKENS - estimatedInputTokens
+            return minOf(MAX_OUTPUT_TOKENS, availableOutput.coerceAtLeast(0))
+        }
 
         private val ROOT_KEYS = setOf(
             "schemaVersion",

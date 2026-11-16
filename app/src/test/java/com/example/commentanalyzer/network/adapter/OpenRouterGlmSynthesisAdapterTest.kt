@@ -122,7 +122,7 @@ class OpenRouterGlmSynthesisAdapterTest {
 
         assertNull(result.error)
         assertNotNull(result.synthesis)
-        assertEquals(8192, sent.get("max_tokens").asInt)
+        assertEquals(131072, sent.get("max_tokens").asInt)
         assertEquals(2, userContent.getAsJsonObject("authoritativeContext").get("totalRelevantComments").asInt)
         val evidenceArray = userContent.getAsJsonArray("evidenceComments")
         assertEquals(2, evidenceArray.size())
@@ -328,6 +328,77 @@ class OpenRouterGlmSynthesisAdapterTest {
         assertEquals(listOf("c-01"), synthesis.agreements[0].citedCommentIds)
         assertEquals(listOf("c-01", "c-02"), synthesis.contrastingPerspectives[0].citedCommentIds)
         assertEquals(listOf("c-01"), synthesis.notableInsights[0].citedCommentIds)
+    }
+
+    @Test
+    fun smallInputRequestsFullMaxTokens131072() = runBlocking {
+        server.enqueue(response(validSynthesisJson("c-01")))
+        val context = SynthesisContext(
+            importId = "imp-1",
+            configVersion = 1L,
+            totalRelevantComments = 1,
+            categoryDistribution = mapOf("praise" to 1),
+            sentimentDistribution = mapOf("positive" to 1),
+            evidenceItems = listOf(
+                com.example.commentanalyzer.domain.analysis.SynthesisEvidenceInput(
+                    "c-01", "Small comment text", "praise", "positive", 1, 0.9, 0.9
+                )
+            )
+        )
+        val result = adapter().synthesize(context)
+        assertNull(result.error)
+        val recorded = server.takeRequest()
+        val sent = JsonParser.parseString(recorded.body!!.readUtf8()).asJsonObject
+        assertEquals(131072, sent.get("max_tokens").asInt)
+        assertEquals(131072, OpenRouterGlmSynthesisAdapter.calculateMaxTokens(500))
+    }
+
+    @Test
+    fun largerInputReducesMaxTokensOnlyWhenRequiredByTotalContext() {
+        // 500k estimated input: 500,000 + 131,072 = 631,072 <= 1,048,576 -> Not reduced below MAX_OUTPUT_TOKENS
+        assertEquals(131072, OpenRouterGlmSynthesisAdapter.calculateMaxTokens(500_000))
+
+        // 917,504 estimated input: 917,504 + 131,072 = 1,048,576 -> Exactly MAX_OUTPUT_TOKENS
+        assertEquals(131072, OpenRouterGlmSynthesisAdapter.calculateMaxTokens(917_504))
+
+        // 950,000 estimated input: 950,000 + 131,072 = 1,081,072 > 1,048,576 -> Reduced to 1,048,576 - 950,000 = 98,576
+        assertEquals(98576, OpenRouterGlmSynthesisAdapter.calculateMaxTokens(950_000))
+    }
+
+    @Test
+    fun inputAndMaxTokensNeverExceedsTotalContext() {
+        val testInputSizes = listOf(0, 1, 100, 10_000, 500_000, 917_504, 950_000, 1_000_000, 1_048_576, 1_100_000)
+        for (inputTokens in testInputSizes) {
+            val maxTokens = OpenRouterGlmSynthesisAdapter.calculateMaxTokens(inputTokens)
+            if (inputTokens <= OpenRouterGlmSynthesisAdapter.MAX_CONTEXT_TOKENS) {
+                assertTrue(
+                    "input ($inputTokens) + maxTokens ($maxTokens) exceeds context cap",
+                    inputTokens + maxTokens <= OpenRouterGlmSynthesisAdapter.MAX_CONTEXT_TOKENS
+                )
+            } else {
+                assertEquals(0, maxTokens)
+            }
+        }
+    }
+
+    @Test
+    fun maxTokensNeverExceedsMaxOutputTokens131072() {
+        val testInputSizes = listOf(0, 1, 10, 100, 1000, 100_000, 500_000, 1_000_000)
+        for (inputTokens in testInputSizes) {
+            val maxTokens = OpenRouterGlmSynthesisAdapter.calculateMaxTokens(inputTokens)
+            assertTrue(
+                "maxTokens ($maxTokens) exceeds MAX_OUTPUT_TOKENS (131072)",
+                maxTokens <= OpenRouterGlmSynthesisAdapter.MAX_OUTPUT_TOKENS
+            )
+        }
+    }
+
+    @Test
+    fun noLegacyArtificialCapRemains() {
+        val legacyCaps = setOf(8192, 16384, 32768, 65536)
+        val maxTokensForSmallInput = OpenRouterGlmSynthesisAdapter.calculateMaxTokens(200)
+        assertFalse(legacyCaps.contains(maxTokensForSmallInput))
+        assertEquals(131072, maxTokensForSmallInput)
     }
 
     private fun adapter(): OpenRouterGlmSynthesisAdapter {
