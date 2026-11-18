@@ -24,6 +24,7 @@ import org.robolectric.RobolectricTestRunner
 class SynthesisOrchestratorTest {
     private lateinit var database: AppDatabase
     private lateinit var orchestrator: SynthesisOrchestrator
+    private var customSynthesisResult: SynthesisResult? = null
     private val fakeAnalyzer = object : SynthesisDeepAnalyzer {
         var callCount = 0
         var lastContext: SynthesisContext? = null
@@ -39,10 +40,11 @@ class SynthesisOrchestratorTest {
                 inputTokens = 10,
                 outputTokens = 10,
                 costUsd = 0.001,
-                synthesis = SynthesisResult(
-                    schemaVersion = 2,
+                synthesis = customSynthesisResult ?: SynthesisResult(
+                    schemaVersion = 3,
                     executiveSummary = "Summary",
                     themes = emptyList(),
+                    themesV3 = emptyList(),
                     agreements = emptyList(),
                     contrastingPerspectives = emptyList(),
                     notableInsights = emptyList()
@@ -365,6 +367,89 @@ class SynthesisOrchestratorTest {
         val calibResult = orchestrator.synthesizeImport("import-calib-cache", 3L, isCalibrationRun = true)
         assertNotNull(calibResult.synthesis)
         assertEquals(2, fakeAnalyzer.callCount)
+    }
+
+    @Test
+    fun v3SynthesisHydratesRepresentativeQuoteAndAuthorLocallyFromRoom() = runBlocking {
+        val comment = CommentEntity(
+            localId = "c-quote", sourceType = SourceType.YOUTUBE, sourceScopeKey = "v1", sourceCommentId = "1",
+            parentSourceCommentId = null, videoId = "v1", importId = "import-quote", authorDisplayName = "Original Author",
+            originalText = "This is the real comment text that must be hydrated locally.",
+            normalizedText = "this is the real comment text",
+            publishedAtEpochMillis = 100L, publishedAtPrecision = null, fingerprintVersion = 1, fingerprintSha256 = "fp-q",
+            processingState = com.example.commentanalyzer.data.local.entity.ProcessingState.COMPLETED,
+            currentStage = com.example.commentanalyzer.data.local.entity.ProcessingStage.DONE,
+            category = "praise", sentiment = "positive", relevanceScore = 1.0, processingConfigVersion = 3L,
+            leaseOwner = null, leaseExpiresAt = null, nextAttemptAt = null, attemptCountLocal = 0,
+            attemptCountJev = 0, attemptCountGlm = 0, lastErrorCode = null, lastErrorSummary = null,
+            createdAt = 100L, updatedAt = 100L, likeCount = 10
+        )
+        database.commentDao().insertComments(listOf(comment))
+
+        customSynthesisResult = SynthesisResult(
+            schemaVersion = 3,
+            executiveSummary = "Summary",
+            themesV3 = listOf(
+                com.example.commentanalyzer.domain.model.SynthesisThemeV3(
+                    title = "Key Feature",
+                    takeaway = "Audience loves the new feature",
+                    representativeCommentId = "c-quote",
+                    citedCommentIds = listOf("c-quote")
+                )
+            )
+        )
+
+        val result = orchestrator.synthesizeImport("import-quote", 3L)
+        assertNotNull(result.synthesis)
+        val theme = result.synthesis!!.themesV3.single()
+        assertEquals("This is the real comment text that must be hydrated locally.", theme.representativeQuote)
+        assertEquals("Original Author", theme.representativeAuthor)
+        assertEquals(1, theme.evidenceCount)
+
+        // Verify persisted entity in database also contains hydrated fields
+        val persisted = database.commentSynthesisDao().getSynthesis("import-quote", 3L)
+        assertNotNull(persisted)
+        val parsed = com.google.gson.Gson().fromJson(persisted!!.payloadJson, SynthesisResult::class.java)
+        assertEquals("This is the real comment text that must be hydrated locally.", parsed.themesV3[0].representativeQuote)
+        assertEquals("Original Author", parsed.themesV3[0].representativeAuthor)
+    }
+
+    @Test
+    fun v3SynthesisFailsClosedWhenRepresentativeCommentNotFoundInRoom() = runBlocking {
+        val comment = CommentEntity(
+            localId = "c-exists", sourceType = SourceType.YOUTUBE, sourceScopeKey = "v1", sourceCommentId = "1",
+            parentSourceCommentId = null, videoId = "v1", importId = "import-missing", authorDisplayName = "Author",
+            originalText = "Existing text", normalizedText = "existing text",
+            publishedAtEpochMillis = 100L, publishedAtPrecision = null, fingerprintVersion = 1, fingerprintSha256 = "fp-e",
+            processingState = com.example.commentanalyzer.data.local.entity.ProcessingState.COMPLETED,
+            currentStage = com.example.commentanalyzer.data.local.entity.ProcessingStage.DONE,
+            category = "praise", sentiment = "positive", relevanceScore = 1.0, processingConfigVersion = 3L,
+            leaseOwner = null, leaseExpiresAt = null, nextAttemptAt = null, attemptCountLocal = 0,
+            attemptCountJev = 0, attemptCountGlm = 0, lastErrorCode = null, lastErrorSummary = null,
+            createdAt = 100L, updatedAt = 100L, likeCount = 10
+        )
+        database.commentDao().insertComments(listOf(comment))
+
+        customSynthesisResult = SynthesisResult(
+            schemaVersion = 3,
+            executiveSummary = "Summary",
+            themesV3 = listOf(
+                com.example.commentanalyzer.domain.model.SynthesisThemeV3(
+                    title = "Key Feature",
+                    takeaway = "Takeaway",
+                    representativeCommentId = "c-missing-from-room",
+                    citedCommentIds = listOf("c-exists")
+                )
+            )
+        )
+
+        val result = orchestrator.synthesizeImport("import-missing", 3L)
+        assertNull(result.synthesis)
+        assertEquals("SYNTHESIS_REPRESENTATIVE_COMMENT_NOT_FOUND", result.error)
+
+        // Verify nothing was persisted
+        val persisted = database.commentSynthesisDao().getSynthesis("import-missing", 3L)
+        assertNull(persisted)
     }
 }
 

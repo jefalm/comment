@@ -1,9 +1,9 @@
 package com.example.commentanalyzer.data.local.dao
 
+import android.content.Context
 import androidx.paging.PagingSource
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import android.content.Context
 import com.example.commentanalyzer.data.local.AppDatabase
 import com.example.commentanalyzer.data.local.entity.CommentEntity
 import com.example.commentanalyzer.data.local.entity.ImportEntity
@@ -11,8 +11,8 @@ import com.example.commentanalyzer.data.local.entity.ImportStatus
 import com.example.commentanalyzer.data.local.entity.ProcessingStage
 import com.example.commentanalyzer.data.local.entity.ProcessingState
 import com.example.commentanalyzer.domain.model.SourceType
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -43,7 +43,7 @@ class CommentDaoPagingTest {
     }
 
     @Test
-    fun pagingIsScopedOrderedSearchableAndRelationshipAware() = runBlocking {
+    fun pagingIsScopedSearchableAndNewestSortedInFlatView() = runBlocking {
         dao.insertComments(
             listOf(
                 comment("top-old", "import-a", "Needle top level", 10L),
@@ -53,17 +53,11 @@ class CommentDaoPagingTest {
             )
         )
 
-        val all = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 0, 0, 0, 0))
+        val all = load(dao.pagingComments(importId = "import-a", query = "", viewMode = 0, sort = 3))
         assertEquals(listOf("reply-new", "top-new", "top-old"), all.map(CommentEntity::localId))
 
-        val search = load(dao.pagingComments("import-a", "nEeDlE", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 0, 0, 0, 0))
+        val search = load(dao.pagingComments(importId = "import-a", query = "nEeDlE", viewMode = 0, sort = 3))
         assertEquals(listOf("reply-new", "top-old"), search.map(CommentEntity::localId))
-
-        val topLevel = load(dao.pagingComments("import-a", "", RELATIONSHIP_TOP_LEVEL, emptyList(), 0, emptyList(), 0, 0, 0, 0, 0))
-        assertEquals(listOf("top-new", "top-old"), topLevel.map(CommentEntity::localId))
-
-        val replies = load(dao.pagingComments("import-a", "", RELATIONSHIP_REPLIES, emptyList(), 0, emptyList(), 0, 0, 0, 0, 0))
-        assertEquals(listOf("reply-new"), replies.map(CommentEntity::localId))
     }
 
     @Test
@@ -77,54 +71,65 @@ class CommentDaoPagingTest {
             )
         )
 
-        val threads = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 0, 0, 1, 0))
+        val threads = load(dao.pagingComments(importId = "import-a", viewMode = 1, sort = 3))
         assertEquals(listOf("root-1", "reply-1-a", "reply-1-b", "orphan-reply"), threads.map(CommentEntity::localId))
     }
 
     @Test
-    fun categoryGroupingAndGroupSizeOrdering() = runBlocking {
-        val c1 = comment("c1", "import-a", "Cat 1 A", 100L).copy(category = "feedback")
-        val c2 = comment("c2", "import-a", "Cat 1 B", 110L).copy(category = "feedback")
-        val c3 = comment("c3", "import-a", "Cat 2 A", 120L).copy(category = "criticism")
+    fun sortModesMostRelevantMostEngagedMostDebated() = runBlocking {
+        val c1 = comment("c1", "import-a", "First", 100L).copy(
+            signalScore = 2.5,
+            likeCount = 10,
+            declaredReplyCount = 1
+        )
+        val c2 = comment("c2", "import-a", "Second", 110L).copy(
+            signalScore = 5.0,
+            likeCount = 2,
+            declaredReplyCount = 5
+        )
+        val c3 = comment("c3", "import-a", "Third", 120L).copy(
+            signalScore = 1.0,
+            likeCount = 20,
+            declaredReplyCount = 0
+        )
         dao.insertComments(listOf(c1, c2, c3))
 
-        val categories = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 0, 0, 2, 4))
-        assertEquals(listOf("c2", "c1", "c3"), categories.map(CommentEntity::localId))
+        val mostRelevant = load(dao.pagingComments(importId = "import-a", viewMode = 0, sort = 0))
+        assertEquals(listOf("c2", "c1", "c3"), mostRelevant.map(CommentEntity::localId))
+
+        val mostEngaged = load(dao.pagingComments(importId = "import-a", viewMode = 0, sort = 1))
+        assertEquals(listOf("c3", "c1", "c2"), mostEngaged.map(CommentEntity::localId))
+
+        val mostDebated = load(dao.pagingComments(importId = "import-a", viewMode = 0, sort = 2))
+        assertEquals(listOf("c2", "c1", "c3"), mostDebated.map(CommentEntity::localId))
     }
 
     @Test
-    fun multiSelectFiltersAndCrossDimensionAnd() = runBlocking {
-        val c1 = comment("c1", "import-a", "Crit Neg", 100L).copy(category = "criticism", sentiment = "negative")
-        val c2 = comment("c2", "import-a", "Q Neutral", 110L).copy(category = "question", sentiment = "neutral")
-        val c3 = comment("c3", "import-a", "Crit Pos", 120L).copy(category = "criticism", sentiment = "positive")
+    fun quickFiltersReferencedInSynthesisHasRepliesQuestions() = runBlocking {
+        val c1 = comment("c1", "import-a", "Normal comment", 100L).copy(signalTags = "debate,novel")
+        val c2 = comment("c2", "import-a", "Question comment", 110L).copy(signalTags = "metrics,question")
+        val c3 = comment("c3", "import-a", "Comment with replies", 120L).copy(declaredReplyCount = 3)
         dao.insertComments(listOf(c1, c2, c3))
 
-        val filtered = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, listOf("criticism", "question"), 1, listOf("negative", "neutral"), 1, 0, 0, 0, 0))
-        assertEquals(listOf("c2", "c1"), filtered.map(CommentEntity::localId))
-    }
+        // Questions filter
+        val questions = load(dao.pagingComments(importId = "import-a", questionsOnly = 1, viewMode = 0, sort = 3))
+        assertEquals(listOf("c2"), questions.map(CommentEntity::localId))
 
-    @Test
-    fun processingStateFilterAndHasReplies() = runBlocking {
-        val c1 = comment("c1", "import-a", "Unclassified", 100L).copy(category = null, sentiment = null)
-        val c2 = comment("c2", "import-a", "Retrying", 110L, parentId = null).copy(processingState = ProcessingState.RETRY_WAIT, declaredReplyCount = 2)
-        dao.insertComments(listOf(c1, c2))
+        // Has replies filter
+        val withReplies = load(dao.pagingComments(importId = "import-a", hasRepliesOnly = 1, viewMode = 0, sort = 3))
+        assertEquals(listOf("c3"), withReplies.map(CommentEntity::localId))
 
-        val retrying = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 3, 0, 0, 0))
-        assertEquals(listOf("c2"), retrying.map(CommentEntity::localId))
-
-        val withReplies = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 0, 1, 0, 0))
-        assertEquals(listOf("c2"), withReplies.map(CommentEntity::localId))
-    }
-
-    @Test
-    fun needsAttentionDeterministicTuple() = runBlocking {
-        val cCrit = comment("crit", "import-a", "Criticism", 100L).copy(category = "criticism")
-        val cFeed = comment("feed", "import-a", "Feedback", 110L).copy(category = "feedback")
-        val cQuest = comment("quest", "import-a", "Question", 120L).copy(category = "question")
-        dao.insertComments(listOf(cCrit, cFeed, cQuest))
-
-        val sorted = load(dao.pagingComments("import-a", "", RELATIONSHIP_ALL, emptyList(), 0, emptyList(), 0, 0, 0, 0, 3))
-        assertEquals(listOf("crit", "feed", "quest"), sorted.map(CommentEntity::localId))
+        // Referenced in synthesis filter
+        val referenced = load(
+            dao.pagingComments(
+                importId = "import-a",
+                citedIds = listOf("c1", "c3"),
+                hasCitedFilter = 1,
+                viewMode = 0,
+                sort = 3
+            )
+        )
+        assertEquals(listOf("c3", "c1"), referenced.map(CommentEntity::localId))
     }
 
     @Test
@@ -209,10 +214,4 @@ class CommentDaoPagingTest {
         videoId = "abcdefghijk",
         videoTitle = importId
     )
-
-    private companion object {
-        const val RELATIONSHIP_ALL = -1
-        const val RELATIONSHIP_TOP_LEVEL = 0
-        const val RELATIONSHIP_REPLIES = 1
-    }
 }

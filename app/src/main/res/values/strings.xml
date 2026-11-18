@@ -65,7 +65,17 @@
     <string name="comments_filter_all">All</string>
     <string name="comments_filter_top_level">Top-level</string>
     <string name="comments_filter_replies">Replies</string>
-    <string name="comments_no_matching">No comments match this search and relationship filter.</string>
+    <string name="comments_filter_referenced_in_synthesis">Referenced in Synthesis</string>
+    <string name="comments_filter_has_replies">Has Replies</string>
+    <string name="comments_filter_questions">Questions</string>
+    <string name="comments_filter_cited_pill">Cited in Analysis</string>
+    <string name="comments_view_threads">Threads</string>
+    <string name="comments_view_flat">Flat</string>
+    <string name="comments_sort_most_relevant">Most Relevant</string>
+    <string name="comments_sort_most_engaged">Most Engaged</string>
+    <string name="comments_sort_most_debated">Most Debated</string>
+    <string name="comments_sort_newest">Newest</string>
+    <string name="comments_no_matching">No comments match this search and filter criteria.</string>
     <string name="comments_load_error">Could not load persisted comments.</string>
     <string name="comments_source_youtube">YouTube</string>
     <string name="comments_source_txt">TXT export</string>
@@ -74,6 +84,8 @@
     <string name="comments_likes">%1$d likes</string>
     <string name="comments_reply_to">Reply to %1$s</string>
     <string name="comments_id">Comment ID: %1$s</string>
+    <string name="analysis_coverage_summary">Imported: %1$d · Filtered Noise: %2$d · Analyzed Evidence: %3$d</string>
+    <string name="analysis_audience_pulse">Audience Pulse</string>
     <string name="settings_youtube_purpose">Used for comment import.</string>
     <string name="settings_typesafe_title">TypeSafe JEV API key</string>
     <string name="settings_typesafe_purpose">Used for direct JEV classification.</string>

@@ -79,7 +79,7 @@ class OpenRouterGlmSynthesisAdapterTest {
     }
 
     @Test
-    fun synthesisRequestContainsAppComputedDistributionsAndExactEvidenceIds() = runBlocking {
+    fun synthesisRequestContainsExactEvidenceIdsAndNoAuthoritativeContext() = runBlocking {
         server.enqueue(response(validSynthesisJson("c-01", "c-02")))
 
         val comments = listOf(
@@ -129,7 +129,7 @@ class OpenRouterGlmSynthesisAdapterTest {
         assertNull(result.error)
         assertNotNull(result.synthesis)
         assertEquals(131072, sent.get("max_tokens").asInt)
-        assertEquals(2, userContent.getAsJsonObject("authoritativeContext").get("totalRelevantComments").asInt)
+        assertNull(userContent.get("authoritativeContext"))
         val evidenceArray = userContent.getAsJsonArray("evidenceComments")
         assertEquals(2, evidenceArray.size())
         val sentEvidenceIds = evidenceArray.map { it.asJsonObject.get("commentId").asString }
@@ -139,6 +139,33 @@ class OpenRouterGlmSynthesisAdapterTest {
     @Test
     fun unknownEvidenceIdFailsClosed() = runBlocking {
         server.enqueue(response(validSynthesisJson("c-01", "unknown-id")))
+        val context = SynthesisContext(
+            importId = "imp-1", configVersion = 1L, totalRelevantComments = 1,
+            categoryDistribution = emptyMap(), sentimentDistribution = emptyMap(),
+            evidenceItems = listOf(
+                com.example.commentanalyzer.domain.analysis.SynthesisEvidenceInput(
+                    "c-01", "text", "praise", "positive", 1, 0.9, 0.9
+                )
+            )
+        )
+        val result = adapter().synthesize(context)
+        assertEquals("GLM_UNKNOWN_EVIDENCE_ID", result.error)
+        assertNull(result.synthesis)
+    }
+
+    @Test
+    fun unknownRepresentativeCommentIdFailsClosed() = runBlocking {
+        val jsonWithBadRepId = """{
+            "schemaVersion": 3,
+            "executiveSummary": "Executive summary.",
+            "themes": [{"title": "Theme 1", "takeaway": "Takeaway", "representativeCommentId": "unknown-rep-id", "citedCommentIds": ["c-01"]}],
+            "debates": [],
+            "questionsAndRequests": [],
+            "blindSpotsAndCorrections": [],
+            "insiderPerspectives": [],
+            "recommendedFollowUps": []
+        }"""
+        server.enqueue(response(jsonWithBadRepId))
         val context = SynthesisContext(
             importId = "imp-1", configVersion = 1L, totalRelevantComments = 1,
             categoryDistribution = emptyMap(), sentimentDistribution = emptyMap(),
@@ -218,7 +245,7 @@ class OpenRouterGlmSynthesisAdapterTest {
         val userMessage = messages.map { it.asJsonObject }.first { it.get("role").asString == "user" }
         val userContent = JsonParser.parseString(userMessage.get("content").asString).asJsonObject
         assertEquals("pt-BR", userContent.get("targetLanguage").asString)
-        assertEquals(2, userContent.get("schemaVersion").asInt)
+        assertEquals(3, userContent.get("schemaVersion").asInt)
         assertNotNull(userContent.get("evidenceComments"))
     }
 
@@ -253,7 +280,7 @@ class OpenRouterGlmSynthesisAdapterTest {
         val userMessage = messages.map { it.asJsonObject }.first { it.get("role").asString == "user" }
         val userContent = JsonParser.parseString(userMessage.get("content").asString).asJsonObject
         assertEquals("en", userContent.get("targetLanguage").asString)
-        assertEquals(2, userContent.get("schemaVersion").asInt)
+        assertEquals(3, userContent.get("schemaVersion").asInt)
         assertNotNull(userContent.get("evidenceComments"))
     }
 
@@ -289,12 +316,14 @@ class OpenRouterGlmSynthesisAdapterTest {
     @Test
     fun accidentalCommentIdsInProseAreSanitizedWhileStructuredIdsArePreserved() = runBlocking {
         val jsonWithIdsInProse = """{
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "executiveSummary": "Several users praised the feature [c-01] while others raised concerns [c-02].",
-            "themes": [{"title": "Theme (c-01)", "description": "Description referring to c-02 directly.", "citedCommentIds": ["c-01", "c-02"]}],
-            "agreements": [{"topic": "Agreement [c-01]", "description": "Agreement text [c-02]", "citedCommentIds": ["c-01"]}],
-            "contrastingPerspectives": [{"perspectiveA": "Persp A [c-01]", "perspectiveB": "Persp B [c-02]", "description": "Diff c-01 vs c-02", "citedCommentIds": ["c-01", "c-02"]}],
-            "notableInsights": [{"insight": "Insight mentioning c-01", "citedCommentIds": ["c-01"]}]
+            "themes": [{"title": "Theme (c-01)", "takeaway": "Takeaway referring to c-02 directly.", "representativeCommentId": "c-01", "citedCommentIds": ["c-01", "c-02"]}],
+            "debates": [{"topic": "Topic [c-01]", "sideASummary": "Side A [c-01]", "sideBSummary": "Side B [c-02]", "citedCommentIds": ["c-01", "c-02"]}],
+            "questionsAndRequests": [{"questionOrRequest": "Question [c-01]", "citedCommentIds": ["c-01"]}],
+            "blindSpotsAndCorrections": [{"claimOrCorrection": "Claim [c-02]", "citedCommentIds": ["c-02"]}],
+            "insiderPerspectives": [{"perspective": "Perspective [c-01]", "citedCommentIds": ["c-01"]}],
+            "recommendedFollowUps": [{"action": "Action [c-01]", "rationale": "Rationale [c-02]", "citedCommentIds": ["c-01"]}]
         }"""
         server.enqueue(response(jsonWithIdsInProse))
         val context = SynthesisContext(
@@ -320,20 +349,17 @@ class OpenRouterGlmSynthesisAdapterTest {
 
         // Prose fields must not contain comment IDs
         assertEquals("Several users praised the feature while others raised concerns.", synthesis!!.executiveSummary)
-        assertEquals("Theme", synthesis.themes[0].title)
-        assertEquals("Description referring to directly.", synthesis.themes[0].description)
-        assertEquals("Agreement", synthesis.agreements[0].topic)
-        assertEquals("Agreement text", synthesis.agreements[0].description)
-        assertEquals("Persp A", synthesis.contrastingPerspectives[0].perspectiveA)
-        assertEquals("Persp B", synthesis.contrastingPerspectives[0].perspectiveB)
-        assertEquals("Diff vs", synthesis.contrastingPerspectives[0].description)
-        assertEquals("Insight mentioning", synthesis.notableInsights[0].insight)
+        assertEquals("Theme", synthesis.themesV3[0].title)
+        assertEquals("Takeaway referring to directly.", synthesis.themesV3[0].takeaway)
+        assertEquals("Topic", synthesis.debates[0].topic)
+        assertEquals("Question", synthesis.questionsAndRequests[0].questionOrRequest)
+        assertEquals("Claim", synthesis.blindSpotsAndCorrections[0].claimOrCorrection)
+        assertEquals("Perspective", synthesis.insiderPerspectives[0].perspective)
+        assertEquals("Action", synthesis.recommendedFollowUps[0].action)
 
         // Structured citation/evidence IDs remain intact
-        assertEquals(listOf("c-01", "c-02"), synthesis.themes[0].citedCommentIds)
-        assertEquals(listOf("c-01"), synthesis.agreements[0].citedCommentIds)
-        assertEquals(listOf("c-01", "c-02"), synthesis.contrastingPerspectives[0].citedCommentIds)
-        assertEquals(listOf("c-01"), synthesis.notableInsights[0].citedCommentIds)
+        assertEquals(listOf("c-01", "c-02"), synthesis.themesV3[0].citedCommentIds)
+        assertEquals("c-01", synthesis.themesV3[0].representativeCommentId)
     }
 
     @Test
@@ -361,13 +387,8 @@ class OpenRouterGlmSynthesisAdapterTest {
 
     @Test
     fun largerInputReducesMaxTokensOnlyWhenRequiredByTotalContext() {
-        // 500k estimated input: 500,000 + 131,072 = 631,072 <= 1,048,576 -> Not reduced below MAX_OUTPUT_TOKENS
         assertEquals(131072, OpenRouterGlmSynthesisAdapter.calculateMaxTokens(500_000))
-
-        // 917,504 estimated input: 917,504 + 131,072 = 1,048,576 -> Exactly MAX_OUTPUT_TOKENS
         assertEquals(131072, OpenRouterGlmSynthesisAdapter.calculateMaxTokens(917_504))
-
-        // 950,000 estimated input: 950,000 + 131,072 = 1,081,072 > 1,048,576 -> Reduced to 1,048,576 - 950,000 = 98,576
         assertEquals(98576, OpenRouterGlmSynthesisAdapter.calculateMaxTokens(950_000))
     }
 
@@ -425,14 +446,17 @@ class OpenRouterGlmSynthesisAdapterTest {
         )
 
     private fun validSynthesisJson(vararg citedIds: String): String {
+        val repId = citedIds.firstOrNull() ?: "c-01"
         val citedJson = citedIds.joinToString(",") { gson.toJson(it) }
         return """{
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "executiveSummary": "Executive summary of comments.",
-            "themes": [{"title": "Theme 1", "description": "Desc", "citedCommentIds": [$citedJson]}],
-            "agreements": [{"topic": "Topic 1", "description": "Desc", "citedCommentIds": [$citedJson]}],
-            "contrastingPerspectives": [{"perspectiveA": "A", "perspectiveB": "B", "description": "Desc", "citedCommentIds": [$citedJson]}],
-            "notableInsights": [{"insight": "Insight", "citedCommentIds": [$citedJson]}]
+            "themes": [{"title": "Theme 1", "takeaway": "Takeaway 1", "representativeCommentId": ${gson.toJson(repId)}, "citedCommentIds": [$citedJson]}],
+            "debates": [{"topic": "Topic 1", "sideASummary": "Side A", "sideBSummary": "Side B", "citedCommentIds": [$citedJson]}],
+            "questionsAndRequests": [{"questionOrRequest": "Question 1", "citedCommentIds": [$citedJson]}],
+            "blindSpotsAndCorrections": [{"claimOrCorrection": "Claim 1", "citedCommentIds": [$citedJson]}],
+            "insiderPerspectives": [{"perspective": "Perspective 1", "citedCommentIds": [$citedJson]}],
+            "recommendedFollowUps": [{"action": "Action 1", "rationale": "Rationale 1", "citedCommentIds": [$citedJson]}]
         }"""
     }
 }

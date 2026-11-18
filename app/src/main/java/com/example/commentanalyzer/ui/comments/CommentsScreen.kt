@@ -1,5 +1,6 @@
 ﻿package com.example.commentanalyzer.ui.comments
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -9,6 +10,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.LoadState
@@ -57,27 +61,45 @@ fun CommentsScreen(viewModel: CommentsViewModel, modifier: Modifier = Modifier) 
                 }
             )
 
-            // View modes and sorts & clear filter controls
+            // View modes and sorts
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ViewModeChip(state, viewModel, CommentViewMode.ALL, "All")
-                ViewModeChip(state, viewModel, CommentViewMode.THREADS, "Threads")
-                ViewModeChip(state, viewModel, CommentViewMode.CATEGORIES, "Categories")
+                ViewModeChip(state, viewModel, CommentViewMode.THREADS, stringResource(R.string.comments_view_threads))
+                ViewModeChip(state, viewModel, CommentViewMode.FLAT, stringResource(R.string.comments_view_flat))
+                Spacer(modifier = Modifier.weight(1f))
+                SortModeDropdown(state, viewModel)
             }
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SortModeDropdown(state, viewModel)
-                if (state.activeFilterCount > 0) {
-                    OutlinedButton(onClick = viewModel::clearAllFilters) {
-                        Text("Clear All (${state.activeFilterCount})")
-                    }
+            // Quick filters & clear filters
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = state.referencedInSynthesisOnly,
+                    onClick = viewModel::toggleReferencedInSynthesis,
+                    label = { Text(stringResource(R.string.comments_filter_referenced_in_synthesis)) }
+                )
+                FilterChip(
+                    selected = state.hasRepliesOnly,
+                    onClick = viewModel::toggleHasRepliesOnly,
+                    label = { Text(stringResource(R.string.comments_filter_has_replies)) }
+                )
+                FilterChip(
+                    selected = state.questionsOnly,
+                    onClick = viewModel::toggleQuestionsOnly,
+                    label = { Text(stringResource(R.string.comments_filter_questions)) }
+                )
+            }
+
+            if (state.activeFilterCount > 0) {
+                OutlinedButton(
+                    onClick = viewModel::clearAllFilters,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Clear All Filters (${state.activeFilterCount})")
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                RelationshipFilterChip(state, viewModel, CommentRelationshipFilter.ALL, R.string.comments_filter_all)
-                RelationshipFilterChip(state, viewModel, CommentRelationshipFilter.TOP_LEVEL, R.string.comments_filter_top_level)
-                RelationshipFilterChip(state, viewModel, CommentRelationshipFilter.REPLIES, R.string.comments_filter_replies)
-            }
             if (comments.loadState.refresh is LoadState.Loading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
@@ -98,7 +120,15 @@ fun CommentsScreen(viewModel: CommentsViewModel, modifier: Modifier = Modifier) 
                     count = comments.itemCount,
                     key = comments.itemKey { it.stableId }
                 ) { index ->
-                    comments[index]?.let { comment -> CommentRow(comment) }
+                    comments[index]?.let { comment ->
+                        val isThreadReply = state.viewMode == CommentViewMode.THREADS &&
+                            !comment.parentCommentId.isNullOrBlank()
+                        CommentRow(
+                            comment = comment,
+                            isThreadReply = isThreadReply,
+                            searchQuery = state.searchQuery
+                        )
+                    }
                 }
                 if (comments.loadState.append is LoadState.Loading) {
                     item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth()) }
@@ -124,14 +154,14 @@ private fun ScopeSelector(state: CommentsUiState, viewModel: CommentsViewModel) 
     Box {
         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
             Text(
-                selected?.let { "${it.title} Â· ${stringResource(it.sourceLabelRes)}" }
+                selected?.let { "${it.title} · ${stringResource(it.sourceLabelRes)}" }
                     ?: stringResource(R.string.comments_select_import)
             )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             state.scopes.forEach { scope ->
                 DropdownMenuItem(
-                    text = { Text("${scope.title} Â· ${stringResource(scope.sourceLabelRes)}") },
+                    text = { Text("${scope.title} · ${stringResource(scope.sourceLabelRes)}") },
                     onClick = {
                         viewModel.selectImport(scope.importId)
                         expanded = false
@@ -160,11 +190,10 @@ private fun ViewModeChip(
 private fun SortModeDropdown(state: CommentsUiState, viewModel: CommentsViewModel) {
     var expanded by remember { mutableStateOf(false) }
     val label = when (state.sortMode) {
-        CommentSortMode.NEWEST -> "Newest"
-        CommentSortMode.OLDEST -> "Oldest"
-        CommentSortMode.MOST_ENGAGED -> "Most Engaged"
-        CommentSortMode.NEEDS_ATTENTION -> "Needs Attention"
-        CommentSortMode.GROUP_SIZE -> "Group Size"
+        CommentSortMode.MOST_RELEVANT -> stringResource(R.string.comments_sort_most_relevant)
+        CommentSortMode.MOST_ENGAGED -> stringResource(R.string.comments_sort_most_engaged)
+        CommentSortMode.MOST_DEBATED -> stringResource(R.string.comments_sort_most_debated)
+        CommentSortMode.NEWEST -> stringResource(R.string.comments_sort_newest)
     }
     Box {
         OutlinedButton(onClick = { expanded = true }) {
@@ -172,15 +201,11 @@ private fun SortModeDropdown(state: CommentsUiState, viewModel: CommentsViewMode
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             CommentSortMode.entries.forEach { mode ->
-                if (mode == CommentSortMode.GROUP_SIZE && state.viewMode != CommentViewMode.CATEGORIES) {
-                    return@forEach
-                }
                 val modeLabel = when (mode) {
-                    CommentSortMode.NEWEST -> "Newest"
-                    CommentSortMode.OLDEST -> "Oldest"
-                    CommentSortMode.MOST_ENGAGED -> "Most Engaged"
-                    CommentSortMode.NEEDS_ATTENTION -> "Needs Attention"
-                    CommentSortMode.GROUP_SIZE -> "Group Size"
+                    CommentSortMode.MOST_RELEVANT -> stringResource(R.string.comments_sort_most_relevant)
+                    CommentSortMode.MOST_ENGAGED -> stringResource(R.string.comments_sort_most_engaged)
+                    CommentSortMode.MOST_DEBATED -> stringResource(R.string.comments_sort_most_debated)
+                    CommentSortMode.NEWEST -> stringResource(R.string.comments_sort_newest)
                 }
                 DropdownMenuItem(
                     text = { Text(modeLabel) },
@@ -195,58 +220,102 @@ private fun SortModeDropdown(state: CommentsUiState, viewModel: CommentsViewMode
 }
 
 @Composable
-private fun RelationshipFilterChip(
-    state: CommentsUiState,
-    viewModel: CommentsViewModel,
-    filter: CommentRelationshipFilter,
-    labelRes: Int
+private fun CommentRow(
+    comment: CommentRowUiModel,
+    isThreadReply: Boolean,
+    searchQuery: String
 ) {
-    FilterChip(
-        selected = state.relationship == filter,
-        onClick = { viewModel.setRelationship(filter) },
-        label = { Text(stringResource(labelRes)) }
-    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .padding(start = if (isThreadReply) 16.dp else 0.dp)
+    ) {
+        if (isThreadReply) {
+            Box(
+                modifier = Modifier
+                    .width(2.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.outlineVariant)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+        Card(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(stringResource(comment.sourceLabelRes), style = MaterialTheme.typography.labelMedium)
+                    comment.likes?.let {
+                        Text(stringResource(R.string.comments_likes, it), style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                comment.author?.let { Text(it, style = MaterialTheme.typography.titleSmall) }
+                comment.videoId?.let {
+                    Text(stringResource(R.string.comments_video_id, it), style = MaterialTheme.typography.bodySmall)
+                }
+
+                val highlightedText = remember(comment.text, searchQuery) {
+                    highlightSearchQuery(comment.text, searchQuery)
+                }
+                Text(highlightedText, style = MaterialTheme.typography.bodyLarge)
+
+                if (comment.isCitedInAnalysis) {
+                    AssistChip(
+                        onClick = {},
+                        label = {
+                            Text(
+                                stringResource(R.string.comments_filter_cited_pill),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    )
+                }
+
+                comment.publishedAtEpochMillis?.let { timestamp ->
+                    val formatted = remember(timestamp) {
+                        DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
+                            .withZone(ZoneId.systemDefault())
+                            .format(Instant.ofEpochMilli(timestamp))
+                    }
+                    Text(formatted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
 }
 
-@Composable
-private fun CommentRow(comment: CommentRowUiModel) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(stringResource(comment.sourceLabelRes), style = MaterialTheme.typography.labelMedium)
-                comment.likes?.let { Text(stringResource(R.string.comments_likes, it), style = MaterialTheme.typography.labelMedium) }
+private fun highlightSearchQuery(text: String, query: String): AnnotatedString {
+    val cleanQuery = query.trim()
+    if (cleanQuery.isEmpty() || !text.contains(cleanQuery, ignoreCase = true)) {
+        return AnnotatedString(text)
+    }
+    return buildAnnotatedString {
+        var currentIndex = 0
+        val lowerText = text.lowercase()
+        val lowerQuery = cleanQuery.lowercase()
+        while (currentIndex < text.length) {
+            val matchIndex = lowerText.indexOf(lowerQuery, currentIndex)
+            if (matchIndex == -1) {
+                append(text.substring(currentIndex))
+                break
             }
-            comment.author?.let { Text(it, style = MaterialTheme.typography.titleSmall) }
-            comment.videoId?.let {
-                Text(stringResource(R.string.comments_video_id, it), style = MaterialTheme.typography.bodySmall)
+            if (matchIndex > currentIndex) {
+                append(text.substring(currentIndex, matchIndex))
             }
-            Text(comment.text, style = MaterialTheme.typography.bodyLarge)
-
-            // JEV label badges if present
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                comment.category?.let {
-                    AssistChip(onClick = {}, label = { Text(it) })
-                }
-                comment.sentiment?.let {
-                    AssistChip(onClick = {}, label = { Text(it) })
-                }
-            }
-
-            comment.parentCommentId?.let {
-                Text(stringResource(R.string.comments_reply_to, it), style = MaterialTheme.typography.bodySmall)
-            }
-            comment.publishedAtEpochMillis?.let { timestamp ->
-                val formatted = remember(timestamp) {
-                    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
-                        .withZone(ZoneId.systemDefault())
-                        .format(Instant.ofEpochMilli(timestamp))
-                }
-                Text(formatted, style = MaterialTheme.typography.bodySmall)
-            }
-            Text(stringResource(R.string.comments_id, comment.displayId), style = MaterialTheme.typography.labelSmall)
+            val matchEnd = matchIndex + cleanQuery.length
+            pushStyle(SpanStyle(background = androidx.compose.ui.graphics.Color.Yellow.copy(alpha = 0.35f)))
+            append(text.substring(matchIndex, matchEnd))
+            pop()
+            currentIndex = matchEnd
         }
     }
 }

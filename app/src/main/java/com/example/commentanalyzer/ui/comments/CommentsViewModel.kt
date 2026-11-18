@@ -22,30 +22,16 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class CommentRelationshipFilter(val queryValue: Int) {
-    ALL(-1),
-    TOP_LEVEL(0),
-    REPLIES(1)
-}
-
-enum class CommentViewMode {
-    THREADS, CATEGORIES, ALL
+enum class CommentViewMode(val queryValue: Int) {
+    THREADS(1),
+    FLAT(0)
 }
 
 enum class CommentSortMode(val queryValue: Int) {
-    NEWEST(0),
-    OLDEST(1),
-    MOST_ENGAGED(2),
-    NEEDS_ATTENTION(3),
-    GROUP_SIZE(4)
-}
-
-enum class CommentStateFilter(val queryValue: Int) {
-    ALL(0),
-    UNCLASSIFIED(1),
-    REVIEW_REJECTED(2),
-    RETRYING(3),
-    FAILED(4)
+    MOST_RELEVANT(0),
+    MOST_ENGAGED(1),
+    MOST_DEBATED(2),
+    NEWEST(3)
 }
 
 data class CommentScopeOption(
@@ -57,7 +43,6 @@ data class CommentScopeOption(
 
 data class CommentRowUiModel(
     val stableId: String,
-    val displayId: String,
     val importId: String,
     val sourceLabelRes: Int,
     val videoId: String?,
@@ -66,30 +51,26 @@ data class CommentRowUiModel(
     val text: String,
     val likes: Int?,
     val publishedAtEpochMillis: Long?,
-    val category: String?,
-    val sentiment: String?
+    val isCitedInAnalysis: Boolean = false
 )
 
 data class CommentsUiState(
     val scopes: List<CommentScopeOption> = emptyList(),
     val selectedImportId: String? = null,
     val searchQuery: String = "",
-    val relationship: CommentRelationshipFilter = CommentRelationshipFilter.ALL,
-    val viewMode: CommentViewMode = CommentViewMode.ALL,
-    val sortMode: CommentSortMode = CommentSortMode.NEWEST,
-    val selectedCategories: Set<String> = emptySet(),
-    val selectedSentiments: Set<String> = emptySet(),
-    val stateFilter: CommentStateFilter = CommentStateFilter.ALL,
-    val hasRepliesOnly: Boolean = false
+    val viewMode: CommentViewMode = CommentViewMode.THREADS,
+    val sortMode: CommentSortMode = CommentSortMode.MOST_RELEVANT,
+    val referencedInSynthesisOnly: Boolean = false,
+    val hasRepliesOnly: Boolean = false,
+    val questionsOnly: Boolean = false,
+    val activeSynthesisCitedIds: Set<String> = emptySet()
 ) {
     val activeFilterCount: Int
         get() = listOfNotNull(
             searchQuery.takeIf { it.isNotBlank() },
-            relationship.takeIf { it != CommentRelationshipFilter.ALL },
-            selectedCategories.takeIf { it.isNotEmpty() },
-            selectedSentiments.takeIf { it.isNotEmpty() },
-            stateFilter.takeIf { it != CommentStateFilter.ALL },
-            hasRepliesOnly.takeIf { it }
+            referencedInSynthesisOnly.takeIf { it },
+            hasRepliesOnly.takeIf { it },
+            questionsOnly.takeIf { it }
         ).size
 }
 
@@ -97,7 +78,8 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
     private val app = application as CommentAnalyzerApplication
     private val repository = CommentsRepository(
         app.database.commentDao(),
-        app.database.importDao()
+        app.database.importDao(),
+        app.database.commentSynthesisDao()
     )
 
     private val _uiState = MutableStateFlow(CommentsUiState())
@@ -108,17 +90,13 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
             PagingRequest(
                 importId = state.selectedImportId,
                 query = state.searchQuery.trim(),
-                relationship = state.relationship.queryValue,
-                categories = state.selectedCategories.toList(),
-                sentiments = state.selectedSentiments.toList(),
-                stateFilter = state.stateFilter.queryValue,
                 hasRepliesOnly = state.hasRepliesOnly,
-                viewMode = when (state.viewMode) {
-                    CommentViewMode.THREADS -> 1
-                    CommentViewMode.CATEGORIES -> 2
-                    CommentViewMode.ALL -> 0
-                },
-                sort = state.sortMode.queryValue
+                questionsOnly = state.questionsOnly,
+                citedIds = if (state.referencedInSynthesisOnly) state.activeSynthesisCitedIds.toList() else emptyList(),
+                hasCitedFilter = state.referencedInSynthesisOnly,
+                viewMode = state.viewMode.queryValue,
+                sort = state.sortMode.queryValue,
+                activeCitedIds = state.activeSynthesisCitedIds
             )
         }
         .distinctUntilChanged()
@@ -130,15 +108,14 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
                 repository.pagingComments(
                     importId = importId,
                     query = request.query,
-                    relationship = request.relationship,
-                    categories = request.categories,
-                    sentiments = request.sentiments,
-                    stateFilter = request.stateFilter,
                     hasRepliesOnly = request.hasRepliesOnly,
+                    questionsOnly = request.questionsOnly,
+                    citedIds = request.citedIds,
+                    hasCitedFilter = request.hasCitedFilter,
                     viewMode = request.viewMode,
                     sort = request.sort
                 ).map { page ->
-                    page.map { comment -> comment.toUiModel() }
+                    page.map { comment -> comment.toUiModel(request.activeCitedIds) }
                 }
             }
         }
@@ -158,6 +135,18 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
                 }
             }
         }
+
+        viewModelScope.launch {
+            uiState
+                .map { it.selectedImportId }
+                .distinctUntilChanged()
+                .flatMapLatest { importId ->
+                    repository.observeSynthesisCitedCommentIds(importId)
+                }
+                .collect { citedIds ->
+                    _uiState.update { it.copy(activeSynthesisCitedIds = citedIds) }
+                }
+        }
     }
 
     fun selectImport(importId: String) {
@@ -171,21 +160,15 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
             state.copy(
                 selectedImportId = importId,
                 searchQuery = commentId ?: "",
-                relationship = CommentRelationshipFilter.ALL,
-                selectedCategories = emptySet(),
-                selectedSentiments = emptySet(),
-                stateFilter = CommentStateFilter.ALL,
-                hasRepliesOnly = false
+                referencedInSynthesisOnly = false,
+                hasRepliesOnly = false,
+                questionsOnly = false
             )
         }
     }
 
     fun setSearchQuery(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
-    }
-
-    fun setRelationship(relationship: CommentRelationshipFilter) {
-        _uiState.update { it.copy(relationship = relationship) }
     }
 
     fun setViewMode(viewMode: CommentViewMode) {
@@ -196,45 +179,25 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
         _uiState.update { it.copy(sortMode = sortMode) }
     }
 
-    fun toggleCategory(category: String) {
-        _uiState.update { state ->
-            val updated = if (state.selectedCategories.contains(category)) {
-                state.selectedCategories - category
-            } else {
-                state.selectedCategories + category
-            }
-            state.copy(selectedCategories = updated)
-        }
+    fun toggleReferencedInSynthesis() {
+        _uiState.update { it.copy(referencedInSynthesisOnly = !it.referencedInSynthesisOnly) }
     }
 
-    fun toggleSentiment(sentiment: String) {
-        _uiState.update { state ->
-            val updated = if (state.selectedSentiments.contains(sentiment)) {
-                state.selectedSentiments - sentiment
-            } else {
-                state.selectedSentiments + sentiment
-            }
-            state.copy(selectedSentiments = updated)
-        }
+    fun toggleHasRepliesOnly() {
+        _uiState.update { it.copy(hasRepliesOnly = !it.hasRepliesOnly) }
     }
 
-    fun setStateFilter(stateFilter: CommentStateFilter) {
-        _uiState.update { it.copy(stateFilter = stateFilter) }
-    }
-
-    fun setHasRepliesOnly(hasRepliesOnly: Boolean) {
-        _uiState.update { it.copy(hasRepliesOnly = hasRepliesOnly) }
+    fun toggleQuestionsOnly() {
+        _uiState.update { it.copy(questionsOnly = !it.questionsOnly) }
     }
 
     fun clearAllFilters() {
         _uiState.update {
             it.copy(
                 searchQuery = "",
-                relationship = CommentRelationshipFilter.ALL,
-                selectedCategories = emptySet(),
-                selectedSentiments = emptySet(),
-                stateFilter = CommentStateFilter.ALL,
-                hasRepliesOnly = false
+                referencedInSynthesisOnly = false,
+                hasRepliesOnly = false,
+                questionsOnly = false
             )
         }
     }
@@ -242,13 +205,13 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
     private data class PagingRequest(
         val importId: String?,
         val query: String,
-        val relationship: Int,
-        val categories: List<String>,
-        val sentiments: List<String>,
-        val stateFilter: Int,
         val hasRepliesOnly: Boolean,
+        val questionsOnly: Boolean,
+        val citedIds: List<String>,
+        val hasCitedFilter: Boolean,
         val viewMode: Int,
-        val sort: Int
+        val sort: Int,
+        val activeCitedIds: Set<String>
     )
 
     private fun ImportEntity.toScopeOption() = CommentScopeOption(
@@ -266,9 +229,8 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
         else -> R.string.comments_source_other
     }
 
-    private fun CommentEntity.toUiModel() = CommentRowUiModel(
+    private fun CommentEntity.toUiModel(activeCitedIds: Set<String>) = CommentRowUiModel(
         stableId = localId,
-        displayId = sourceCommentId ?: localId,
         importId = importId,
         sourceLabelRes = sourceType.toDisplayNameRes(),
         videoId = videoId,
@@ -277,7 +239,6 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
         text = originalText,
         likes = likeCount,
         publishedAtEpochMillis = publishedAtEpochMillis,
-        category = category,
-        sentiment = sentiment
+        isCitedInAnalysis = localId in activeCitedIds
     )
 }

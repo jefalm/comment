@@ -188,27 +188,48 @@ interface CommentDao {
         WHERE importId = :importId
             AND (
                 :query = ''
-                OR localId = :query
                 OR originalText LIKE '%' || :query || '%' COLLATE NOCASE
-            )
-            AND (
-                :relationship = -1
-                OR (:relationship = 0 AND parentSourceCommentId IS NULL)
-                OR (:relationship = 1 AND parentSourceCommentId IS NOT NULL)
-            )
-            AND (:hasCategories = 0 OR category IN (:categories))
-            AND (:hasSentiments = 0 OR sentiment IN (:sentiments))
-            AND (
-                :stateFilter = 0
-                OR (:stateFilter = 1 AND (category IS NULL OR sentiment IS NULL))
-                OR (:stateFilter = 2 AND processingState IN ('MANUAL_REVIEW', 'LOCAL_REJECTED', 'JEV_REJECTED'))
-                OR (:stateFilter = 3 AND processingState = 'RETRY_WAIT')
-                OR (:stateFilter = 4 AND processingState = 'FAILED_PERMANENT')
+                OR authorDisplayName LIKE '%' || :query || '%' COLLATE NOCASE
             )
             AND (:hasRepliesOnly = 0 OR COALESCE(declaredReplyCount, 0) > 0 OR EXISTS (SELECT 1 FROM comments r WHERE r.parentSourceCommentId = comments.sourceCommentId))
+            AND (:questionsOnly = 0 OR (',' || COALESCE(signalTags, '') || ',') LIKE '%,question,%')
+            AND (:hasCitedFilter = 0 OR localId IN (:citedIds))
         ORDER BY
-            -- Threads view ordering:
-            -- 1) Thread anchor: if root, own publishedAtEpochMillis; if reply, parent's publishedAtEpochMillis (or own if orphan)
+            -- Threads view ordering (:viewMode = 1):
+            -- 1) Sort threads by anchor metric:
+            CASE
+                WHEN :viewMode = 1 AND :sort = 0 THEN
+                    CASE
+                        WHEN parentSourceCommentId IS NULL THEN COALESCE(signalScore, -1e9)
+                        ELSE COALESCE((SELECT p.signalScore FROM comments p WHERE p.sourceCommentId = comments.parentSourceCommentId), COALESCE(signalScore, -1e9))
+                    END
+                ELSE 0
+            END DESC,
+            CASE
+                WHEN :viewMode = 1 AND :sort = 1 THEN
+                    CASE
+                        WHEN parentSourceCommentId IS NULL THEN (COALESCE(likeCount, 0) + COALESCE(declaredReplyCount, 0))
+                        ELSE COALESCE((SELECT (COALESCE(p.likeCount, 0) + COALESCE(p.declaredReplyCount, 0)) FROM comments p WHERE p.sourceCommentId = comments.parentSourceCommentId), (COALESCE(likeCount, 0) + COALESCE(declaredReplyCount, 0)))
+                    END
+                ELSE 0
+            END DESC,
+            CASE
+                WHEN :viewMode = 1 AND :sort = 2 THEN
+                    CASE
+                        WHEN parentSourceCommentId IS NULL THEN COALESCE(declaredReplyCount, 0)
+                        ELSE COALESCE((SELECT p.declaredReplyCount FROM comments p WHERE p.sourceCommentId = comments.parentSourceCommentId), COALESCE(declaredReplyCount, 0))
+                    END
+                ELSE 0
+            END DESC,
+            CASE
+                WHEN :viewMode = 1 AND :sort = 3 THEN
+                    CASE
+                        WHEN parentSourceCommentId IS NULL THEN publishedAtEpochMillis
+                        ELSE COALESCE((SELECT p.publishedAtEpochMillis FROM comments p WHERE p.sourceCommentId = comments.parentSourceCommentId), publishedAtEpochMillis)
+                    END
+                ELSE 0
+            END DESC,
+            -- Anchor timestamp tie-breaker for threads:
             CASE
                 WHEN :viewMode = 1 THEN
                     CASE
@@ -217,63 +238,41 @@ interface CommentDao {
                     END
                 ELSE 0
             END DESC,
-            -- 2) Thread identity: group root and its replies together by root sourceCommentId (or parentSourceCommentId)
+            -- 2) Group root and replies by thread identity:
             CASE
                 WHEN :viewMode = 1 THEN
-                    COALESCE(parentSourceCommentId, sourceCommentId)
+                    COALESCE(parentSourceCommentId, sourceCommentId, localId)
                 ELSE ''
             END ASC,
-            -- 3) Root precedes its replies (root has parentSourceCommentId IS NULL -> 0, replies -> 1)
+            -- 3) Root precedes its replies:
             CASE
                 WHEN :viewMode = 1 THEN
                     CASE WHEN parentSourceCommentId IS NULL THEN 0 ELSE 1 END
                 ELSE 0
             END ASC,
-            -- 4) Replies chronological ascending within root
+            -- 4) Replies chronological ascending within root:
             CASE
                 WHEN :viewMode = 1 AND parentSourceCommentId IS NOT NULL THEN publishedAtEpochMillis
                 ELSE 0
             END ASC,
-            -- Categories view ordering: group size ordering (:sort = 4)
-            CASE
-                WHEN :viewMode = 2 AND :sort = 4 THEN
-                    (SELECT COUNT(*) FROM comments c_cat WHERE c_cat.importId = :importId AND c_cat.category IS NOT NULL AND c_cat.category = comments.category)
-                ELSE 0
-            END DESC,
-            -- Needs Attention ordering (:sort = 3)
-            -- Priority: criticism > feedback > question > others
-            CASE
-                WHEN :sort = 3 THEN
-                    CASE category
-                        WHEN 'criticism' THEN 1
-                        WHEN 'feedback' THEN 2
-                        WHEN 'question' THEN 3
-                        ELSE 4
-                    END
-                ELSE 0
-            END ASC,
-            -- General sort ordering
-            CASE
-                WHEN :sort = 1 THEN COALESCE(likeCount, 0)
-                WHEN :sort = 2 THEN COALESCE(declaredReplyCount, 0)
-                ELSE 0
-            END DESC,
+            -- Flat view ordering (:viewMode = 0):
+            CASE WHEN :viewMode = 0 AND :sort = 0 THEN COALESCE(signalScore, -1e9) ELSE 0 END DESC,
+            CASE WHEN :viewMode = 0 AND :sort = 1 THEN (COALESCE(likeCount, 0) + COALESCE(declaredReplyCount, 0)) ELSE 0 END DESC,
+            CASE WHEN :viewMode = 0 AND :sort = 2 THEN COALESCE(declaredReplyCount, 0) ELSE 0 END DESC,
+            CASE WHEN :viewMode = 0 AND :sort = 3 THEN publishedAtEpochMillis ELSE 0 END DESC,
             publishedAtEpochMillis DESC,
             localId ASC
         """
     )
     fun pagingComments(
         importId: String,
-        query: String,
-        relationship: Int,
-        categories: List<String>,
-        hasCategories: Int,
-        sentiments: List<String>,
-        hasSentiments: Int,
-        stateFilter: Int,
-        hasRepliesOnly: Int,
-        viewMode: Int,
-        sort: Int
+        query: String = "",
+        hasRepliesOnly: Int = 0,
+        questionsOnly: Int = 0,
+        citedIds: List<String> = listOf(""),
+        hasCitedFilter: Int = 0,
+        viewMode: Int = 1,
+        sort: Int = 0
     ): PagingSource<Int, CommentEntity>
 
     @Query("SELECT * FROM comments WHERE processingState = :state ORDER BY publishedAtEpochMillis DESC")

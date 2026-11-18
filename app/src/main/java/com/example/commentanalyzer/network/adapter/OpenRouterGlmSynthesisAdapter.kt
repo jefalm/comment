@@ -2,12 +2,14 @@ package com.example.commentanalyzer.network.adapter
 
 import com.example.commentanalyzer.domain.analysis.SynthesisContext
 import com.example.commentanalyzer.domain.analysis.SynthesisDeepAnalyzer
-import com.example.commentanalyzer.domain.model.SynthesisAgreement
 import com.example.commentanalyzer.domain.model.SynthesisBatchResult
-import com.example.commentanalyzer.domain.model.SynthesisContrastingPerspective
-import com.example.commentanalyzer.domain.model.SynthesisNotableInsight
+import com.example.commentanalyzer.domain.model.SynthesisBlindSpotV3
+import com.example.commentanalyzer.domain.model.SynthesisDebateV3
+import com.example.commentanalyzer.domain.model.SynthesisFollowUpV3
+import com.example.commentanalyzer.domain.model.SynthesisInsiderV3
+import com.example.commentanalyzer.domain.model.SynthesisQuestionV3
 import com.example.commentanalyzer.domain.model.SynthesisResult
-import com.example.commentanalyzer.domain.model.SynthesisTheme
+import com.example.commentanalyzer.domain.model.SynthesisThemeV3
 import com.example.commentanalyzer.network.dto.glm.GlmJsonSchema
 import com.example.commentanalyzer.network.dto.glm.GlmMessage
 import com.example.commentanalyzer.network.dto.glm.GlmPlugin
@@ -41,48 +43,40 @@ class OpenRouterGlmSynthesisAdapter(
 
         val targetLanguage = context.targetLanguage
         val languageInstruction = when (targetLanguage) {
-            "pt-BR" -> "Write every human-readable synthesis field (executiveSummary, themes[].title, themes[].description, " +
-                "agreements[].topic, agreements[].description, contrastingPerspectives[].perspectiveA, " +
-                "contrastingPerspectives[].perspectiveB, contrastingPerspectives[].description, " +
-                "notableInsights[].insight) " +
+            "pt-BR" -> "Write every human-readable synthesis field (executiveSummary, themes[].title, themes[].takeaway, " +
+                "debates[].topic, debates[].sideASummary, debates[].sideBSummary, " +
+                "questionsAndRequests[].questionOrRequest, blindSpotsAndCorrections[].claimOrCorrection, " +
+                "insiderPerspectives[].perspective, recommendedFollowUps[].action, recommendedFollowUps[].rationale) " +
                 "in Brazilian Portuguese. Keep JSON keys, IDs, schema values, and machine-readable structure unchanged."
-            else -> "Write every human-readable synthesis field (executiveSummary, themes[].title, themes[].description, " +
-                "agreements[].topic, agreements[].description, contrastingPerspectives[].perspectiveA, " +
-                "contrastingPerspectives[].perspectiveB, contrastingPerspectives[].description, " +
-                "notableInsights[].insight) " +
+            else -> "Write every human-readable synthesis field (executiveSummary, themes[].title, themes[].takeaway, " +
+                "debates[].topic, debates[].sideASummary, debates[].sideBSummary, " +
+                "questionsAndRequests[].questionOrRequest, blindSpotsAndCorrections[].claimOrCorrection, " +
+                "insiderPerspectives[].perspective, recommendedFollowUps[].action, recommendedFollowUps[].rationale) " +
                 "in English. Keep JSON keys, IDs, schema values, and machine-readable structure unchanged."
         }
 
         val promptPayload = mapOf(
             "schemaVersion" to SCHEMA_VERSION,
             "targetLanguage" to targetLanguage,
-            "authoritativeContext" to mapOf(
-                "totalRelevantComments" to context.totalRelevantComments,
-                "categoryDistribution" to context.categoryDistribution,
-                "sentimentDistribution" to context.sentimentDistribution
-            ),
             "evidenceComments" to context.evidenceItems.map {
-                mapOf(
+                val item = mutableMapOf<String, Any>(
                     "commentId" to it.commentId,
-                    "text" to it.text,
-                    "category" to it.category,
-                    "sentiment" to it.sentiment,
-                    "likeCount" to it.likeCount,
-                    "categoryConfidence" to it.categoryConfidence,
-                    "sentimentConfidence" to it.sentimentConfidence
+                    "text" to it.text
                 )
+                it.likeCount?.let { likes -> item["likeCount"] = likes }
+                item
             }
         )
 
         val messages = listOf(
             GlmMessage(
                 role = "system",
-                content = "You are a bounded cross-comment synthesis engine. JEV owns per-comment classifications. " +
-                    "Do not recalculate totals. Use only the provided authoritative category and sentiment distributions, " +
-                    "and cite comment IDs strictly from the supplied evidence comments. " +
+                content = "You are a bounded cross-comment synthesis engine. " +
+                    "Cite comment IDs strictly from the supplied evidence comments. " +
                     "Do not include comment IDs, evidence IDs, UUIDs, bracketed citation IDs, or other internal identifiers in human-readable prose. " +
                     "Keep evidence references only in the dedicated structured citation/evidence fields. " +
-                    "$languageInstruction Return schemaVersion 2."
+                    "For themes, select an exact representativeCommentId from the cited evidence comments; never generate quote text or fake quotes. " +
+                    "$languageInstruction Return schemaVersion 3."
             ),
             GlmMessage(
                 role = "user",
@@ -212,58 +206,106 @@ class OpenRouterGlmSynthesisAdapter(
         // Themes
         val rawThemes = obj.get("themes")
         if (rawThemes == null || !rawThemes.isJsonArray) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-        val themes = mutableListOf<SynthesisTheme>()
+        val themes = mutableListOf<SynthesisThemeV3>()
         for (el in rawThemes.asJsonArray) {
             if (!el.isJsonObject) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
             val item = el.asJsonObject
             if (item.keySet() != THEME_KEYS) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
             val title = item.get("title").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val desc = item.get("description").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            val takeaway = item.get("takeaway").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            val repId = item.get("representativeCommentId").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            if (repId !in evidenceIds) return ValidationResult(error = "GLM_UNKNOWN_EVIDENCE_ID")
             val cited = parseCitedIds(item.get("citedCommentIds"), evidenceIds) ?: return ValidationResult(error = "GLM_UNKNOWN_EVIDENCE_ID")
-            themes += SynthesisTheme(title, desc, cited)
+            themes += SynthesisThemeV3(
+                title = sanitizeProse(title, evidenceIds),
+                takeaway = sanitizeProse(takeaway, evidenceIds),
+                representativeCommentId = repId,
+                citedCommentIds = cited
+            )
         }
 
-        // Agreements
-        val rawAgreements = obj.get("agreements")
-        if (rawAgreements == null || !rawAgreements.isJsonArray) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-        val agreements = mutableListOf<SynthesisAgreement>()
-        for (el in rawAgreements.asJsonArray) {
+        // Debates
+        val rawDebates = obj.get("debates")
+        if (rawDebates == null || !rawDebates.isJsonArray) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+        val debates = mutableListOf<SynthesisDebateV3>()
+        for (el in rawDebates.asJsonArray) {
             if (!el.isJsonObject) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
             val item = el.asJsonObject
-            if (item.keySet() != AGREEMENT_KEYS) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            if (item.keySet() != DEBATE_KEYS) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
             val topic = item.get("topic").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val desc = item.get("description").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            val sideA = item.get("sideASummary").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            val sideB = item.get("sideBSummary").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
             val cited = parseCitedIds(item.get("citedCommentIds"), evidenceIds) ?: return ValidationResult(error = "GLM_UNKNOWN_EVIDENCE_ID")
-            agreements += SynthesisAgreement(topic, desc, cited)
+            debates += SynthesisDebateV3(
+                topic = sanitizeProse(topic, evidenceIds),
+                sideASummary = sanitizeProse(sideA, evidenceIds),
+                sideBSummary = sanitizeProse(sideB, evidenceIds),
+                citedCommentIds = cited
+            )
         }
 
-        // Contrasting Perspectives
-        val rawContrasting = obj.get("contrastingPerspectives")
-        if (rawContrasting == null || !rawContrasting.isJsonArray) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-        val contrasting = mutableListOf<SynthesisContrastingPerspective>()
-        for (el in rawContrasting.asJsonArray) {
+        // Questions & Requests
+        val rawQuestions = obj.get("questionsAndRequests")
+        if (rawQuestions == null || !rawQuestions.isJsonArray) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+        val questions = mutableListOf<SynthesisQuestionV3>()
+        for (el in rawQuestions.asJsonArray) {
             if (!el.isJsonObject) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
             val item = el.asJsonObject
-            if (item.keySet() != CONTRASTING_KEYS) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val pA = item.get("perspectiveA").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val pB = item.get("perspectiveB").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val desc = item.get("description").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            if (item.keySet() != QUESTION_KEYS) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            val q = item.get("questionOrRequest").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
             val cited = parseCitedIds(item.get("citedCommentIds"), evidenceIds) ?: return ValidationResult(error = "GLM_UNKNOWN_EVIDENCE_ID")
-            contrasting += SynthesisContrastingPerspective(pA, pB, desc, cited)
+            questions += SynthesisQuestionV3(
+                questionOrRequest = sanitizeProse(q, evidenceIds),
+                citedCommentIds = cited
+            )
         }
 
-        // Notable Insights
-        val rawInsights = obj.get("notableInsights")
-        if (rawInsights == null || !rawInsights.isJsonArray) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-        val insights = mutableListOf<SynthesisNotableInsight>()
-        for (el in rawInsights.asJsonArray) {
+        // Blind Spots & Corrections
+        val rawBlindSpots = obj.get("blindSpotsAndCorrections")
+        if (rawBlindSpots == null || !rawBlindSpots.isJsonArray) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+        val blindSpots = mutableListOf<SynthesisBlindSpotV3>()
+        for (el in rawBlindSpots.asJsonArray) {
             if (!el.isJsonObject) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
             val item = el.asJsonObject
-            if (item.keySet() != INSIGHT_KEYS) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val ins = item.get("insight").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            if (item.keySet() != BLIND_SPOT_KEYS) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            val claim = item.get("claimOrCorrection").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
             val cited = parseCitedIds(item.get("citedCommentIds"), evidenceIds) ?: return ValidationResult(error = "GLM_UNKNOWN_EVIDENCE_ID")
-            insights += SynthesisNotableInsight(
-                insight = sanitizeProse(ins, evidenceIds),
+            blindSpots += SynthesisBlindSpotV3(
+                claimOrCorrection = sanitizeProse(claim, evidenceIds),
+                citedCommentIds = cited
+            )
+        }
+
+        // Insider Perspectives
+        val rawInsiders = obj.get("insiderPerspectives")
+        if (rawInsiders == null || !rawInsiders.isJsonArray) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+        val insiders = mutableListOf<SynthesisInsiderV3>()
+        for (el in rawInsiders.asJsonArray) {
+            if (!el.isJsonObject) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            val item = el.asJsonObject
+            if (item.keySet() != INSIDER_KEYS) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            val p = item.get("perspective").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            val cited = parseCitedIds(item.get("citedCommentIds"), evidenceIds) ?: return ValidationResult(error = "GLM_UNKNOWN_EVIDENCE_ID")
+            insiders += SynthesisInsiderV3(
+                perspective = sanitizeProse(p, evidenceIds),
+                citedCommentIds = cited
+            )
+        }
+
+        // Recommended Follow-Ups
+        val rawFollowUps = obj.get("recommendedFollowUps")
+        if (rawFollowUps == null || !rawFollowUps.isJsonArray) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+        val followUps = mutableListOf<SynthesisFollowUpV3>()
+        for (el in rawFollowUps.asJsonArray) {
+            if (!el.isJsonObject) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            val item = el.asJsonObject
+            if (item.keySet() != FOLLOW_UP_KEYS) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            val action = item.get("action").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            val rationale = item.get("rationale").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
+            val cited = parseCitedIds(item.get("citedCommentIds"), evidenceIds) ?: return ValidationResult(error = "GLM_UNKNOWN_EVIDENCE_ID")
+            followUps += SynthesisFollowUpV3(
+                action = sanitizeProse(action, evidenceIds),
+                rationale = sanitizeProse(rationale, evidenceIds),
                 citedCommentIds = cited
             )
         }
@@ -271,26 +313,12 @@ class OpenRouterGlmSynthesisAdapter(
         val synthesisResult = SynthesisResult(
             schemaVersion = SCHEMA_VERSION,
             executiveSummary = sanitizeProse(execSummary, evidenceIds),
-            themes = themes.map {
-                it.copy(
-                    title = sanitizeProse(it.title, evidenceIds),
-                    description = sanitizeProse(it.description, evidenceIds)
-                )
-            },
-            agreements = agreements.map {
-                it.copy(
-                    topic = sanitizeProse(it.topic, evidenceIds),
-                    description = sanitizeProse(it.description, evidenceIds)
-                )
-            },
-            contrastingPerspectives = contrasting.map {
-                it.copy(
-                    perspectiveA = sanitizeProse(it.perspectiveA, evidenceIds),
-                    perspectiveB = sanitizeProse(it.perspectiveB, evidenceIds),
-                    description = sanitizeProse(it.description, evidenceIds)
-                )
-            },
-            notableInsights = insights
+            themesV3 = themes,
+            debates = debates,
+            questionsAndRequests = questions,
+            blindSpotsAndCorrections = blindSpots,
+            insiderPerspectives = insiders,
+            recommendedFollowUps = followUps
         )
         return ValidationResult(synthesis = synthesisResult)
     }
@@ -354,7 +382,7 @@ class OpenRouterGlmSynthesisAdapter(
         const val MODEL = "z-ai/glm-5.3-flash"
         const val MAX_CONTEXT_TOKENS = 1_048_576
         const val MAX_OUTPUT_TOKENS = 131_072
-        private const val SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = 3
         private val gson = Gson()
 
         fun estimateInputTokens(messages: List<GlmMessage>): Int {
@@ -371,14 +399,18 @@ class OpenRouterGlmSynthesisAdapter(
             "schemaVersion",
             "executiveSummary",
             "themes",
-            "agreements",
-            "contrastingPerspectives",
-            "notableInsights"
+            "debates",
+            "questionsAndRequests",
+            "blindSpotsAndCorrections",
+            "insiderPerspectives",
+            "recommendedFollowUps"
         )
-        private val THEME_KEYS = setOf("title", "description", "citedCommentIds")
-        private val AGREEMENT_KEYS = setOf("topic", "description", "citedCommentIds")
-        private val CONTRASTING_KEYS = setOf("perspectiveA", "perspectiveB", "description", "citedCommentIds")
-        private val INSIGHT_KEYS = setOf("insight", "citedCommentIds")
+        private val THEME_KEYS = setOf("title", "takeaway", "representativeCommentId", "citedCommentIds")
+        private val DEBATE_KEYS = setOf("topic", "sideASummary", "sideBSummary", "citedCommentIds")
+        private val QUESTION_KEYS = setOf("questionOrRequest", "citedCommentIds")
+        private val BLIND_SPOT_KEYS = setOf("claimOrCorrection", "citedCommentIds")
+        private val INSIDER_KEYS = setOf("perspective", "citedCommentIds")
+        private val FOLLOW_UP_KEYS = setOf("action", "rationale", "citedCommentIds")
 
         private val responseSchema: Map<String, Any> = mapOf(
             "type" to "object",
@@ -395,46 +427,71 @@ class OpenRouterGlmSynthesisAdapter(
                         "required" to THEME_KEYS.toList(),
                         "properties" to mapOf(
                             "title" to mapOf("type" to "string", "minLength" to 1),
-                            "description" to mapOf("type" to "string", "minLength" to 1),
+                            "takeaway" to mapOf("type" to "string", "minLength" to 1),
+                            "representativeCommentId" to mapOf("type" to "string", "minLength" to 1),
                             "citedCommentIds" to mapOf("type" to "array", "items" to mapOf("type" to "string", "minLength" to 1))
                         )
                     )
                 ),
-                "agreements" to mapOf(
+                "debates" to mapOf(
                     "type" to "array",
                     "items" to mapOf(
                         "type" to "object",
                         "additionalProperties" to false,
-                        "required" to AGREEMENT_KEYS.toList(),
+                        "required" to DEBATE_KEYS.toList(),
                         "properties" to mapOf(
                             "topic" to mapOf("type" to "string", "minLength" to 1),
-                            "description" to mapOf("type" to "string", "minLength" to 1),
+                            "sideASummary" to mapOf("type" to "string", "minLength" to 1),
+                            "sideBSummary" to mapOf("type" to "string", "minLength" to 1),
                             "citedCommentIds" to mapOf("type" to "array", "items" to mapOf("type" to "string", "minLength" to 1))
                         )
                     )
                 ),
-                "contrastingPerspectives" to mapOf(
+                "questionsAndRequests" to mapOf(
                     "type" to "array",
                     "items" to mapOf(
                         "type" to "object",
                         "additionalProperties" to false,
-                        "required" to CONTRASTING_KEYS.toList(),
+                        "required" to QUESTION_KEYS.toList(),
                         "properties" to mapOf(
-                            "perspectiveA" to mapOf("type" to "string", "minLength" to 1),
-                            "perspectiveB" to mapOf("type" to "string", "minLength" to 1),
-                            "description" to mapOf("type" to "string", "minLength" to 1),
+                            "questionOrRequest" to mapOf("type" to "string", "minLength" to 1),
                             "citedCommentIds" to mapOf("type" to "array", "items" to mapOf("type" to "string", "minLength" to 1))
                         )
                     )
                 ),
-                "notableInsights" to mapOf(
+                "blindSpotsAndCorrections" to mapOf(
                     "type" to "array",
                     "items" to mapOf(
                         "type" to "object",
                         "additionalProperties" to false,
-                        "required" to INSIGHT_KEYS.toList(),
+                        "required" to BLIND_SPOT_KEYS.toList(),
                         "properties" to mapOf(
-                            "insight" to mapOf("type" to "string", "minLength" to 1),
+                            "claimOrCorrection" to mapOf("type" to "string", "minLength" to 1),
+                            "citedCommentIds" to mapOf("type" to "array", "items" to mapOf("type" to "string", "minLength" to 1))
+                        )
+                    )
+                ),
+                "insiderPerspectives" to mapOf(
+                    "type" to "array",
+                    "items" to mapOf(
+                        "type" to "object",
+                        "additionalProperties" to false,
+                        "required" to INSIDER_KEYS.toList(),
+                        "properties" to mapOf(
+                            "perspective" to mapOf("type" to "string", "minLength" to 1),
+                            "citedCommentIds" to mapOf("type" to "array", "items" to mapOf("type" to "string", "minLength" to 1))
+                        )
+                    )
+                ),
+                "recommendedFollowUps" to mapOf(
+                    "type" to "array",
+                    "items" to mapOf(
+                        "type" to "object",
+                        "additionalProperties" to false,
+                        "required" to FOLLOW_UP_KEYS.toList(),
+                        "properties" to mapOf(
+                            "action" to mapOf("type" to "string", "minLength" to 1),
+                            "rationale" to mapOf("type" to "string", "minLength" to 1),
                             "citedCommentIds" to mapOf("type" to "array", "items" to mapOf("type" to "string", "minLength" to 1))
                         )
                     )

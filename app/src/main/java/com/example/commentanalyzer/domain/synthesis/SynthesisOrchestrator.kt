@@ -102,6 +102,27 @@ class SynthesisOrchestrator(
             return batchResult.copy(importId = importId, configVersion = configVersion)
         }
 
+        val commentsMap = comments.associateBy { it.localId }
+        val rawSynthesis = batchResult.synthesis
+        val hydratedThemesV3 = mutableListOf<com.example.commentanalyzer.domain.model.SynthesisThemeV3>()
+        for (theme in rawSynthesis.themesV3) {
+            val repComment = commentsMap[theme.representativeCommentId]
+            val quote = repComment?.originalText?.takeIf(String::isNotBlank)
+            if (quote == null) {
+                return batchResult.copy(
+                    importId = importId,
+                    configVersion = configVersion,
+                    synthesis = null,
+                    error = "SYNTHESIS_REPRESENTATIVE_COMMENT_NOT_FOUND"
+                )
+            }
+            hydratedThemesV3 += theme.copy(
+                representativeQuote = quote,
+                representativeAuthor = repComment.authorDisplayName
+            )
+        }
+        val hydratedSynthesis = rawSynthesis.copy(themesV3 = hydratedThemesV3)
+
         val synthesisId = "synthesis:$importId:$configVersion"
         val entity = CommentSynthesisEntity(
             synthesisId = synthesisId,
@@ -113,7 +134,7 @@ class SynthesisOrchestrator(
             inputTokens = batchResult.inputTokens,
             outputTokens = batchResult.outputTokens,
             costUsd = batchResult.costUsd,
-            payloadJson = gson.toJson(batchResult.synthesis),
+            payloadJson = gson.toJson(hydratedSynthesis),
             createdAt = clock()
         )
 
@@ -124,7 +145,8 @@ class SynthesisOrchestrator(
         return batchResult.copy(
             synthesisId = synthesisId,
             importId = importId,
-            configVersion = configVersion
+            configVersion = configVersion,
+            synthesis = hydratedSynthesis
         )
     }
 }

@@ -105,7 +105,7 @@ class AnalysisPersistenceRepository(
                 currentStage = stage,
                 signalScore = rankerRes?.score ?: comment.signalScore,
                 rankerVersion = rankerRes?.rankerVersion ?: comment.rankerVersion,
-                signalTags = rankerRes?.signalTags ?: comment.signalTags,
+                signalTags = com.example.commentanalyzer.domain.ranking.SignalTags.canonicalize(rankerRes?.signalTags ?: comment.signalTags),
                 nearDuplicateClusterSize = clusterSize,
                 nextAttemptAt = null,
                 lastErrorCode = null,

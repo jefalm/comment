@@ -38,6 +38,57 @@ fun formatAnalysisForClipboard(
 
     blocks.add("EXECUTIVE SUMMARY\n\n${synthesis.executiveSummary.trim()}")
 
+    // Schema v3 formatting:
+    if (synthesis.themesV3.isNotEmpty()) {
+        val themeItems = synthesis.themesV3.mapIndexed { index, theme ->
+            val sb = StringBuilder()
+            sb.append("${index + 1}. ${theme.title.trim()}\n${theme.takeaway.trim()}")
+            if (!theme.representativeQuote.isNullOrBlank()) {
+                val author = theme.representativeAuthor?.takeIf(String::isNotBlank) ?: "Audience voice"
+                sb.append("\n\"${theme.representativeQuote.trim()}\" — $author")
+            }
+            sb.append("\nSupported by ${theme.evidenceCount} evidence comments")
+            sb.toString()
+        }
+        blocks.add("THEMES\n\n${themeItems.joinToString("\n\n")}")
+    }
+
+    if (synthesis.debates.isNotEmpty()) {
+        val debateItems = synthesis.debates.mapIndexed { index, debate ->
+            "${index + 1}. ${debate.topic.trim()}\nSide A: ${debate.sideASummary.trim()}\nSide B: ${debate.sideBSummary.trim()}\nSupported by ${debate.evidenceCount} evidence comments"
+        }
+        blocks.add("DEBATES\n\n${debateItems.joinToString("\n\n")}")
+    }
+
+    if (synthesis.questionsAndRequests.isNotEmpty()) {
+        val qItems = synthesis.questionsAndRequests.mapIndexed { index, q ->
+            "${index + 1}. ${q.questionOrRequest.trim()}\nSupported by ${q.evidenceCount} evidence comments"
+        }
+        blocks.add("QUESTIONS & REQUESTS\n\n${qItems.joinToString("\n\n")}")
+    }
+
+    if (synthesis.blindSpotsAndCorrections.isNotEmpty()) {
+        val bItems = synthesis.blindSpotsAndCorrections.mapIndexed { index, b ->
+            "${index + 1}. ${b.claimOrCorrection.trim()}\nSupported by ${b.evidenceCount} evidence comments"
+        }
+        blocks.add("BLIND SPOTS & CORRECTIONS\n\n${bItems.joinToString("\n\n")}")
+    }
+
+    if (synthesis.insiderPerspectives.isNotEmpty()) {
+        val iItems = synthesis.insiderPerspectives.mapIndexed { index, i ->
+            "${index + 1}. ${i.perspective.trim()}\nSupported by ${i.evidenceCount} evidence comments"
+        }
+        blocks.add("INSIDER PERSPECTIVES\n\n${iItems.joinToString("\n\n")}")
+    }
+
+    if (synthesis.recommendedFollowUps.isNotEmpty()) {
+        val fItems = synthesis.recommendedFollowUps.mapIndexed { index, f ->
+            "${index + 1}. Action: ${f.action.trim()}\nRationale: ${f.rationale.trim()}\nSupported by ${f.evidenceCount} evidence comments"
+        }
+        blocks.add("RECOMMENDED FOLLOW-UPS\n\n${fItems.joinToString("\n\n")}")
+    }
+
+    // Schema v2 legacy fallback:
     if (synthesis.themes.isNotEmpty()) {
         val themeItems = synthesis.themes.mapIndexed { index, theme ->
             "${index + 1}. ${theme.title.trim()}\n${theme.description.trim()}"
