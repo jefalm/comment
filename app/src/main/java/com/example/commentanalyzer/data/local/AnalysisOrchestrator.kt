@@ -37,6 +37,14 @@ data class RemoteProcessingReadiness(
 
     val isGlmReady: Boolean
         get() = hasOpenRouterKey && remoteProcessingConsent
+
+    fun isReadyForConfig(configVersion: Long, enableJevGate: Boolean = true): Boolean {
+        return if (configVersion >= 3L || !enableJevGate) {
+            hasOpenRouterKey && remoteProcessingConsent
+        } else {
+            isReady
+        }
+    }
 }
 
 data class AnalysisRunResult(

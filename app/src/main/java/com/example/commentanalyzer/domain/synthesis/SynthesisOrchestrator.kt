@@ -1,6 +1,7 @@
 package com.example.commentanalyzer.domain.synthesis
 
 import androidx.room.withTransaction
+import com.example.commentanalyzer.data.local.AnalysisPersistenceRepository
 import com.example.commentanalyzer.data.local.AppDatabase
 import com.example.commentanalyzer.data.local.entity.CommentSynthesisEntity
 import com.example.commentanalyzer.domain.analysis.SynthesisContext
@@ -11,6 +12,7 @@ import com.google.gson.Gson
 class SynthesisOrchestrator(
     private val database: AppDatabase,
     private val synthesisAnalyzer: SynthesisDeepAnalyzer,
+    private val persistence: AnalysisPersistenceRepository = AnalysisPersistenceRepository(database),
     private val clock: () -> Long = System::currentTimeMillis
 ) {
     private val gson = Gson()
@@ -18,12 +20,13 @@ class SynthesisOrchestrator(
     suspend fun synthesizeImport(
         importId: String,
         configVersion: Long,
-        forceRerun: Boolean = false
+        forceRerun: Boolean = false,
+        isCalibrationRun: Boolean = false
     ): SynthesisBatchResult {
         require(importId.isNotBlank())
         val dao = database.commentSynthesisDao()
 
-        if (!forceRerun) {
+        if (!forceRerun && !isCalibrationRun) {
             val existing = dao.getSynthesis(importId, configVersion)
             if (existing != null) {
                 val parsedSynthesis = try {
@@ -73,7 +76,14 @@ class SynthesisOrchestrator(
         val categoryDist = comments.groupingBy { it.category ?: "unlabeled" }.eachCount()
         val sentimentDist = comments.groupingBy { it.sentiment ?: "unlabeled" }.eachCount()
 
-        val evidence = EvidencePlanner.planEvidence(comments)
+        val evidence = EvidencePlanner.planEvidence(comments, isCalibrationRun)
+
+        // Wire exposure telemetry for the exact import/config run
+        val candidateIds = comments.map { it.localId }
+        val selectedIds = evidence.map { it.commentId }
+        val evidencePositions = evidence.mapIndexed { index, item -> item.commentId to index }.toMap()
+        persistence.updateEvidenceTelemetry(candidateIds, selectedIds, evidencePositions)
+
         val detectedLanguage = SynthesisLanguageDetector.detectLanguage(
             evidence.map { it.text }.ifEmpty { comments.map { it.originalText } }
         )

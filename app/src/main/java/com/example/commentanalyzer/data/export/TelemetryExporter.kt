@@ -40,6 +40,9 @@ object TelemetryExporter {
             com.example.commentanalyzer.data.local.entity.ProcessingState.JEV_REJECTED
         )
 
+        val gson = Gson()
+        val synthesisCache = mutableMapOf<Pair<String, Long>, com.example.commentanalyzer.domain.model.SynthesisResult?>()
+
         val csvBuilder = StringBuilder()
         csvBuilder.append("runId_sha256,importId_sha256,commentId_sha256,processingConfigVersion,signalRankerVersion,")
         csvBuilder.append("wasLocallyRejected,wasJevAccepted,jevProbability,wasEvidenceCandidate,wasSelectedForEvidence,")
@@ -60,6 +63,52 @@ object TelemetryExporter {
             val wasJevAccepted = comment.processingState == com.example.commentanalyzer.data.local.entity.ProcessingState.COMPLETED
             val jevProbability = comment.relevanceScore ?: 0.0
 
+            val synthesisKey = comment.importId to comment.processingConfigVersion
+            val synthesis = synthesisCache.getOrPut(synthesisKey) {
+                database.commentSynthesisDao().getSynthesis(comment.importId, comment.processingConfigVersion)?.let { entity ->
+                    try {
+                        gson.fromJson(entity.payloadJson, com.example.commentanalyzer.domain.model.SynthesisResult::class.java)
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+            }
+
+            var citationCount = 0
+            val sectionTypes = mutableSetOf<String>()
+            if (synthesis != null) {
+                for (theme in synthesis.themes) {
+                    val count = theme.citedCommentIds.count { it == comment.localId }
+                    if (count > 0) {
+                        citationCount += count
+                        sectionTypes.add("themes")
+                    }
+                }
+                for (agreement in synthesis.agreements) {
+                    val count = agreement.citedCommentIds.count { it == comment.localId }
+                    if (count > 0) {
+                        citationCount += count
+                        sectionTypes.add("agreements")
+                    }
+                }
+                for (perspective in synthesis.contrastingPerspectives) {
+                    val count = perspective.citedCommentIds.count { it == comment.localId }
+                    if (count > 0) {
+                        citationCount += count
+                        sectionTypes.add("contrastingPerspectives")
+                    }
+                }
+                for (insight in synthesis.notableInsights) {
+                    val count = insight.citedCommentIds.count { it == comment.localId }
+                    if (count > 0) {
+                        citationCount += count
+                        sectionTypes.add("notableInsights")
+                    }
+                }
+            }
+            val wasCitedAny = citationCount > 0
+            val citationSectionTypes = sectionTypes.sorted().joinToString(";")
+
             csvBuilder.append(runIdHash).append(",")
             csvBuilder.append(importIdHash).append(",")
             csvBuilder.append(commentIdHash).append(",")
@@ -71,9 +120,9 @@ object TelemetryExporter {
             csvBuilder.append(comment.wasEvidenceCandidate).append(",")
             csvBuilder.append(comment.wasSelectedForEvidence).append(",")
             csvBuilder.append(comment.evidencePosition).append(",")
-            csvBuilder.append(false).append(",")
-            csvBuilder.append(0).append(",")
-            csvBuilder.append("").append(",")
+            csvBuilder.append(wasCitedAny).append(",")
+            csvBuilder.append(citationCount).append(",")
+            csvBuilder.append(citationSectionTypes).append(",")
             csvBuilder.append(features.logLikes).append(",")
             csvBuilder.append(features.logReplies).append(",")
             csvBuilder.append(features.wordCount).append(",")

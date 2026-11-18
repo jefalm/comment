@@ -305,6 +305,68 @@ class SynthesisOrchestratorTest {
         assertEquals(42, evidence.likeCount)
         assertTrue(database.analysisResultDao().getResultsForComment("c-jev-only", 1L).isEmpty())
     }
+
+    @Test
+    fun synthesisPersistsExposureTelemetryForExactRun() = runBlocking {
+        val comments = (1..10).map { i ->
+            CommentEntity(
+                localId = "comm-$i", sourceType = SourceType.YOUTUBE, sourceScopeKey = "v1", sourceCommentId = "$i",
+                parentSourceCommentId = null, videoId = "v1", importId = "import-telemetry", authorDisplayName = "User $i",
+                originalText = "Useful comment $i for testing exposure telemetry persistence.",
+                normalizedText = "useful comment $i for testing exposure telemetry persistence.",
+                publishedAtEpochMillis = 100L, publishedAtPrecision = null, fingerprintVersion = 1, fingerprintSha256 = "fp-$i",
+                processingState = com.example.commentanalyzer.data.local.entity.ProcessingState.COMPLETED,
+                currentStage = com.example.commentanalyzer.data.local.entity.ProcessingStage.DONE,
+                category = "feedback", sentiment = "positive", relevanceScore = 0.9,
+                processingConfigVersion = 3L, leaseOwner = null, leaseExpiresAt = null, nextAttemptAt = null,
+                attemptCountLocal = 0, attemptCountJev = 0, attemptCountGlm = 0, lastErrorCode = null, lastErrorSummary = null,
+                createdAt = 100L, updatedAt = 100L, likeCount = i
+            )
+        }
+        database.commentDao().insertComments(comments)
+
+        val result = orchestrator.synthesizeImport("import-telemetry", 3L)
+        assertNotNull(result.synthesis)
+
+        val updatedComments = database.commentDao().getCommentsByIds(comments.map { it.localId })
+        assertTrue(updatedComments.all { it.wasEvidenceCandidate })
+        assertTrue(updatedComments.all { it.wasSelectedForEvidence })
+        assertTrue(updatedComments.all { it.evidencePosition >= 0 })
+    }
+
+    @Test
+    fun calibrationRunBypassesCachedSynthesisAndExecutes() = runBlocking {
+        val comment = CommentEntity(
+            localId = "c-calib-cache", sourceType = SourceType.YOUTUBE, sourceScopeKey = "v1", sourceCommentId = "1",
+            parentSourceCommentId = null, videoId = "v1", importId = "import-calib-cache", authorDisplayName = "User",
+            originalText = "Comment to test calibration bypassing cache",
+            normalizedText = "comment to test calibration bypassing cache",
+            publishedAtEpochMillis = 100L, publishedAtPrecision = null, fingerprintVersion = 1, fingerprintSha256 = "fp-1",
+            processingState = com.example.commentanalyzer.data.local.entity.ProcessingState.COMPLETED,
+            currentStage = com.example.commentanalyzer.data.local.entity.ProcessingStage.DONE,
+            category = "praise", sentiment = "positive", relevanceScore = 1.0, processingConfigVersion = 3L,
+            leaseOwner = null, leaseExpiresAt = null, nextAttemptAt = null, attemptCountLocal = 0,
+            attemptCountJev = 0, attemptCountGlm = 0, lastErrorCode = null, lastErrorSummary = null,
+            createdAt = 100L, updatedAt = 100L, likeCount = 10
+        )
+        database.commentDao().insertComments(listOf(comment))
+
+        // First run: normal (populates cache)
+        val normalResult1 = orchestrator.synthesizeImport("import-calib-cache", 3L, isCalibrationRun = false)
+        assertNotNull(normalResult1.synthesis)
+        assertEquals(1, fakeAnalyzer.callCount)
+
+        // Second run: normal (hits cache, fakeAnalyzer NOT called again)
+        val normalResult2 = orchestrator.synthesizeImport("import-calib-cache", 3L, isCalibrationRun = false)
+        assertNotNull(normalResult2.synthesis)
+        assertEquals(1, fakeAnalyzer.callCount)
+
+        // Third run: calibration run (must bypass cache, fakeAnalyzer called again)
+        val calibResult = orchestrator.synthesizeImport("import-calib-cache", 3L, isCalibrationRun = true)
+        assertNotNull(calibResult.synthesis)
+        assertEquals(2, fakeAnalyzer.callCount)
+    }
 }
+
 
 

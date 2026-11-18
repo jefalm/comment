@@ -398,6 +398,47 @@ class AnalysisOrchestratorTest {
         assertTrue(tags.contains("timestamp"))
     }
 
+    @Test
+    fun v3ConfigReadinessRequiresOnlyOpenRouterAndConsentWithoutTypeSafeKey() = runBlocking {
+        addComment(comment("v3-ready-comment", "Valid comment for v3 pipeline.").copy(processingConfigVersion = 3L))
+
+        val v3Config = ProcessingConfigEntity(
+            configVersion = 3L,
+            jevModelRequested = "jev-1.14.0",
+            jevRejectThreshold = 0.3,
+            jevPassThreshold = 0.7,
+            glmModelRequested = "z-ai/glm-5.3-flash",
+            enableJevGate = false,
+            signalRankerVersion = 1,
+            youtubeKeyCiphertext = null,
+            openrouterKeyCiphertext = null,
+            openrouterReferer = null,
+            createdAt = now,
+            isActive = true
+        )
+
+        // Remote readiness without TypeSafe key
+        val readinessWithoutTypeSafe = {
+            RemoteProcessingReadiness(
+                hasOpenRouterKey = true,
+                remoteProcessingConsent = true,
+                hasTypeSafeKey = false
+            )
+        }
+
+        assertTrue(readinessWithoutTypeSafe().isReadyForConfig(3L, enableJevGate = false))
+
+        val result = orchestrator(readiness = readinessWithoutTypeSafe).run(IMPORT_ID, v3Config)
+
+        assertEquals(0, gateCalls)
+        assertEquals(0, glmCalls)
+        assertEquals(0, result.attemptedJevBatches)
+        assertFalse(result.remoteProcessingBlocked)
+
+        val saved = requireNotNull(database.commentDao().getCommentById("v3-ready-comment"))
+        assertEquals(ProcessingState.COMPLETED, saved.processingState)
+    }
+
     private companion object {
         const val IMPORT_ID = "import-orchestration"
         const val CONFIG_VERSION = 2L
