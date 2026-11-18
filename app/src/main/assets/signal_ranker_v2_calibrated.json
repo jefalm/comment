@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "calibrated": true,
+  "description": "Phase 0B exposure-conditioned citation ranker; L2 logistic regression on 1,080 valid exposed rows across 36 imports; import-grouped validation; provisional until prospective calibration-mode telemetry.",
+  "intercept": 0.18740307493388506,
+  "features": {
+    "logLikes": {
+      "mean": 1.0628667407407408,
+      "std": 1.6269442951390571,
+      "coefficient": 0.08370804488896154
+    },
+    "logReplies": {
+      "mean": 0.3363988953703703,
+      "std": 0.8398665977495049,
+      "coefficient": 0.0660536160966951
+    },
+    "wordCount": {
+      "mean": 21.344444444444445,
+      "std": 47.2177370419001,
+      "coefficient": 0.04546640907700602
+    },
+    "questionMarkCount": {
+      "mean": 0.23055555555555557,
+      "std": 0.645204293419467,
+      "coefficient": 0.02557169578637152
+    }
+  }
+}

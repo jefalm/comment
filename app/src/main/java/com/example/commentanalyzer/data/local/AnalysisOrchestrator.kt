@@ -92,7 +92,7 @@ class AnalysisOrchestrator(
             val evaluations = batchFilterResults.mapValues { it.value.filterResult }
             val clusterSizes = batchFilterResults.mapValues { it.value.nearDuplicateClusterSize }
 
-            val ranker = defaultRanker
+            val ranker = com.example.commentanalyzer.domain.ranking.SignalRanker.forVersion(effectiveConfig.signalRankerVersion)
             val rankerResults = imported.associate { comment ->
                 val cSize = clusterSizes[comment.localId] ?: 1
                 val features = com.example.commentanalyzer.domain.ranking.FeatureExtractor.extract(comment, imported, cSize)
@@ -449,26 +449,5 @@ class AnalysisOrchestrator(
         const val GATE_QUESTION_KEY = "comment_quality_gate"
         const val MAX_COMMENTS_PER_RUN = 5_000
         val ERROR_CODE = Regex("[A-Z0-9][A-Z0-9_]{0,63}")
-        val defaultRanker = com.example.commentanalyzer.domain.ranking.SignalRanker.fromJson("""
-            {
-              "version": 1,
-              "calibrated": false,
-              "description": "Un-calibrated baseline heuristic weights prior to Phase 0B offline regression",
-              "intercept": 0.0,
-              "features": {
-                "logLikes": { "mean": 1.0, "std": 1.0, "coefficient": 0.35 },
-                "logReplies": { "mean": 0.5, "std": 1.0, "coefficient": 0.40 },
-                "wordCount": { "mean": 18.0, "std": 15.0, "coefficient": 0.25 },
-                "questionMarkCount": { "mean": 0.2, "std": 0.5, "coefficient": 0.30 },
-                "hasTimestamp": { "mean": 0.05, "std": 0.22, "coefficient": 0.20 },
-                "hasPercentage": { "mean": 0.03, "std": 0.17, "coefficient": 0.15 },
-                "hasCurrency": { "mean": 0.03, "std": 0.17, "coefficient": 0.15 },
-                "isReply": { "mean": 0.3, "std": 0.46, "coefficient": 0.10 },
-                "rareTokenScore": { "mean": 0.5, "std": 0.3, "coefficient": 0.30 },
-                "hasDiscourseMarker": { "mean": 0.15, "std": 0.36, "coefficient": 0.25 },
-                "nearDuplicateClusterSize": { "mean": 1.1, "std": 0.5, "coefficient": -0.35 }
-              }
-            }
-        """.trimIndent())
     }
 }
