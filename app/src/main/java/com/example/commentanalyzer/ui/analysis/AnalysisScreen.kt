@@ -109,20 +109,54 @@ fun AnalysisScreen(
             }
             val synthesis = state.summary?.synthesis
             if (synthesis != null) {
-                OutlinedButton(
-                    onClick = {
-                        val report = formatAnalysisForClipboard(
-                            videoTitle = selectedImport?.videoTitle,
-                            publisher = selectedImport?.channelTitle,
-                            videoId = selectedImport?.videoId,
-                            synthesis = synthesis
-                        )
-                        clipboardManager.setText(AnnotatedString(report))
-                        showCopiedConfirmation = true
-                    },
-                    modifier = Modifier.fillMaxWidth()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(stringResource(R.string.analysis_copy_action))
+                    Button(
+                        onClick = viewModel::openAskComments,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Ask Comments")
+                    }
+                    Button(
+                        onClick = viewModel::openPinnedReply,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Draft Pinned Reply")
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            val brief = viewModel.getFollowUpBriefMarkdown()
+                            if (brief != null) {
+                                clipboardManager.setText(AnnotatedString(brief))
+                                showCopiedConfirmation = true
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Copy Follow-Up Brief")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val report = formatAnalysisForClipboard(
+                                videoTitle = selectedImport?.videoTitle,
+                                publisher = selectedImport?.channelTitle,
+                                videoId = selectedImport?.videoId,
+                                synthesis = synthesis
+                            )
+                            clipboardManager.setText(AnnotatedString(report))
+                            showCopiedConfirmation = true
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.analysis_copy_action))
+                    }
                 }
             }
             if (showCopiedConfirmation) {
@@ -158,6 +192,74 @@ fun AnalysisScreen(
                 viewModel.dismissEvidence()
                 state.selectedImportId?.let { importId ->
                     onNavigateToComments(importId, commentId)
+                }
+            }
+        )
+    }
+
+    if (state.askCommentsOpen) {
+        AskCommentsBottomSheet(
+            question = state.question,
+            onQuestionChange = viewModel::updateQuestion,
+            suggestedQuestions = state.suggestedQuestions,
+            onAsk = { q -> viewModel.askQuestion(q) },
+            isLoading = state.qaLoading,
+            answer = state.qaAnswer,
+            citedCommentIds = state.qaCitedCommentIds,
+            insufficientEvidence = state.qaInsufficientEvidence,
+            onShowEvidence = viewModel::showQaEvidence,
+            onDismissRequest = viewModel::dismissAskComments
+        )
+    }
+
+    if (state.pinnedReplyOpen) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = viewModel::dismissPinnedReply,
+            title = { Text("Draft Pinned Reply") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "Editable creator draft. Grounded in audience feedback.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    androidx.compose.material3.OutlinedTextField(
+                        value = state.pinnedReplyDraft ?: "",
+                        onValueChange = viewModel::updatePinnedReplyDraft,
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 6,
+                        maxLines = 14
+                    )
+                    if (state.pinnedReplySupportingEvidenceIds.isNotEmpty()) {
+                        OutlinedButton(
+                            onClick = viewModel::showPinnedReplyEvidence,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("View evidence (${state.pinnedReplySupportingEvidenceIds.size})")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val draft = state.pinnedReplyDraft ?: ""
+                        clipboardManager.setText(AnnotatedString(draft))
+                        showCopiedConfirmation = true
+                        viewModel.dismissPinnedReply()
+                    }
+                ) {
+                    Text("Copy Draft")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = viewModel::dismissPinnedReply) {
+                    Text("Close")
                 }
             }
         )

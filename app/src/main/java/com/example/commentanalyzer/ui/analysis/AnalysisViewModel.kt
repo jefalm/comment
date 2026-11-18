@@ -51,8 +51,36 @@ data class AnalysisUiState(
     val isRemoteProcessingReady: Boolean = false,
     val isAnalysisRunning: Boolean = false,
     val analysisActionMessage: AnalysisActionMessage? = null,
-    val evidenceSheetState: EvidenceSheetState? = null
-)
+    val evidenceSheetState: EvidenceSheetState? = null,
+    val askCommentsOpen: Boolean = false,
+    val question: String = "",
+    val qaLoading: Boolean = false,
+    val qaAnswer: String? = null,
+    val qaCitedCommentIds: List<String> = emptyList(),
+    val qaInsufficientEvidence: Boolean = false,
+    val qaError: String? = null,
+    val pinnedReplyDraft: String? = null,
+    val pinnedReplyOpen: Boolean = false,
+    val pinnedReplySupportingEvidenceIds: List<String> = emptyList()
+) {
+    val suggestedQuestions: List<String>
+        get() {
+            val synth = summary?.synthesis ?: return emptyList()
+            val list = mutableListOf<String>()
+            synth.debates.firstOrNull()?.let {
+                list.add("What are viewers debating about ${it.topic}?")
+            }
+            synth.questionsAndRequests.take(2).forEach {
+                list.add(it.questionOrRequest)
+            }
+            if (list.size < 3) {
+                synth.blindSpotsAndCorrections.firstOrNull()?.let {
+                    list.add("What corrections or misconceptions were raised?")
+                }
+            }
+            return list.take(3)
+        }
+}
 
 class AnalysisViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as CommentAnalyzerApplication
@@ -273,6 +301,112 @@ class AnalysisViewModel(application: Application) : AndroidViewModel(application
 
     fun dismissEvidence() {
         _uiState.update { it.copy(evidenceSheetState = null) }
+    }
+
+    fun openAskComments() {
+        _uiState.update { it.copy(askCommentsOpen = true) }
+    }
+
+    fun dismissAskComments() {
+        _uiState.update { it.copy(askCommentsOpen = false) }
+    }
+
+    fun updateQuestion(question: String) {
+        _uiState.update { it.copy(question = question) }
+    }
+
+    fun askQuestion(query: String = _uiState.value.question) {
+        val importId = _uiState.value.selectedImportId ?: return
+        val configVersion = _uiState.value.selectedConfigVersion ?: return
+        val cleanQuery = query.trim()
+        if (cleanQuery.isBlank() || _uiState.value.qaLoading) return
+
+        _uiState.update {
+            it.copy(
+                question = cleanQuery,
+                qaLoading = true,
+                qaAnswer = null,
+                qaCitedCommentIds = emptyList(),
+                qaInsufficientEvidence = false,
+                qaError = null
+            )
+        }
+
+        viewModelScope.launch {
+            val candidateComments = app.database.commentDao().getCommentsForSynthesis(importId, configVersion)
+            val activeSynthesisCitedIds = _uiState.value.summary?.synthesis?.allCitedCommentIds() ?: emptySet()
+            val retrievedComments = com.example.commentanalyzer.domain.synthesis.CommentQueryRetriever.retrieveRelevantComments(
+                importId = importId,
+                configVersion = configVersion,
+                question = cleanQuery,
+                candidateComments = candidateComments,
+                activeSynthesisCitedIds = activeSynthesisCitedIds
+            )
+
+            val result = analysisContainer.commentQaAdapter.answerQuestion(
+                question = cleanQuery,
+                evidenceComments = retrievedComments
+            )
+
+            _uiState.update {
+                it.copy(
+                    qaLoading = false,
+                    qaAnswer = result.answer,
+                    qaCitedCommentIds = result.citedCommentIds,
+                    qaInsufficientEvidence = result.insufficientEvidence,
+                    qaError = result.error
+                )
+            }
+        }
+    }
+
+    fun showQaEvidence() {
+        val ids = _uiState.value.qaCitedCommentIds
+        if (ids.isNotEmpty()) {
+            showEvidence("Q&A Evidence", ids)
+        }
+    }
+
+    fun openPinnedReply() {
+        val synthesis = _uiState.value.summary?.synthesis ?: return
+        val selectedImport = _uiState.value.imports.firstOrNull { it.importId == _uiState.value.selectedImportId }
+        val draft = com.example.commentanalyzer.domain.synthesis.PinnedReplyFormatter.format(
+            synthesis = synthesis,
+            videoTitle = selectedImport?.videoTitle
+        )
+        _uiState.update {
+            it.copy(
+                pinnedReplyDraft = draft.text,
+                pinnedReplySupportingEvidenceIds = draft.supportingEvidenceCommentIds,
+                pinnedReplyOpen = true
+            )
+        }
+    }
+
+    fun updatePinnedReplyDraft(text: String) {
+        _uiState.update { it.copy(pinnedReplyDraft = text) }
+    }
+
+    fun dismissPinnedReply() {
+        _uiState.update { it.copy(pinnedReplyOpen = false) }
+    }
+
+    fun showPinnedReplyEvidence() {
+        val ids = _uiState.value.pinnedReplySupportingEvidenceIds
+        if (ids.isNotEmpty()) {
+            showEvidence("Pinned Reply Evidence", ids)
+        }
+    }
+
+    fun getFollowUpBriefMarkdown(): String? {
+        val synthesis = _uiState.value.summary?.synthesis ?: return null
+        val selectedImport = _uiState.value.imports.firstOrNull { it.importId == _uiState.value.selectedImportId }
+        return com.example.commentanalyzer.domain.synthesis.FollowUpBriefFormatter.format(
+            videoTitle = selectedImport?.videoTitle,
+            channelTitle = selectedImport?.channelTitle,
+            videoId = selectedImport?.videoId,
+            synthesis = synthesis
+        )
     }
 
     fun isRemoteProcessingReady(configVersion: Long? = _uiState.value.selectedConfigVersion): Boolean {

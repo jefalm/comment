@@ -24,6 +24,7 @@ interface AnalysisAppContainer : AppContainer {
     val analysisOrchestrator: AnalysisOrchestrator
     val analysisReadRepository: AnalysisReadRepository
     val synthesisOrchestrator: com.example.commentanalyzer.domain.synthesis.SynthesisOrchestrator
+    val commentQaAdapter: com.example.commentanalyzer.domain.synthesis.OpenRouterGlmQaAdapter
     suspend fun runAnalysis(importId: String, configVersion: Long): AnalysisRunResult
 }
 
@@ -45,6 +46,12 @@ class ProductionAppContainer internal constructor(
     }
     val synthesisDeepAnalyzer: com.example.commentanalyzer.domain.analysis.SynthesisDeepAnalyzer by lazy {
         com.example.commentanalyzer.network.adapter.OpenRouterGlmSynthesisAdapter(
+            glmApiService = glmApiService,
+            tokenProvider = openRouterKeyProvider
+        )
+    }
+    override val commentQaAdapter: com.example.commentanalyzer.domain.synthesis.OpenRouterGlmQaAdapter by lazy {
+        com.example.commentanalyzer.domain.synthesis.OpenRouterGlmQaAdapter(
             glmApiService = glmApiService,
             tokenProvider = openRouterKeyProvider
         )
