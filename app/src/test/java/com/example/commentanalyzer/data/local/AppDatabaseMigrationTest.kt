@@ -159,4 +159,72 @@ class AppDatabaseMigrationTest {
             context.deleteDatabase("analysis-migration-3-4-test.db")
         }
     }
+
+    @Test
+    fun migrationFiveToSixAddsSignalRankerColumnsWithoutDroppingRows() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name("analysis-migration-5-6-test.db")
+                .callback(
+                    object : SupportSQLiteOpenHelper.Callback(5) {
+                        override fun onCreate(database: SupportSQLiteDatabase) {
+                            database.execSQL(
+                                "CREATE TABLE processing_configs (" +
+                                    "configVersion INTEGER NOT NULL PRIMARY KEY, jevModelRequested TEXT NOT NULL, " +
+                                    "jevRejectThreshold REAL NOT NULL, jevPassThreshold REAL NOT NULL, " +
+                                    "glmModelRequested TEXT NOT NULL, createdAt INTEGER NOT NULL, isActive INTEGER NOT NULL)"
+                            )
+                            database.execSQL(
+                                "CREATE TABLE comments (" +
+                                    "localId TEXT NOT NULL PRIMARY KEY, originalText TEXT NOT NULL)"
+                            )
+                            database.execSQL(
+                                "INSERT INTO processing_configs(configVersion, jevModelRequested, jevRejectThreshold, jevPassThreshold, glmModelRequested, createdAt, isActive) " +
+                                    "VALUES(2, 'jev-1.14.0', 0.3, 0.7, 'glm-5.3', 100, 1)"
+                            )
+                            database.execSQL(
+                                "INSERT INTO comments(localId, originalText) VALUES('comment-1', 'Hello world')"
+                            )
+                        }
+
+                        override fun onUpgrade(
+                            database: SupportSQLiteDatabase,
+                            oldVersion: Int,
+                            newVersion: Int
+                        ) = Unit
+                    }
+                )
+                .build()
+        )
+
+        val database = helper.writableDatabase
+        try {
+            AppDatabase.MIGRATION_5_6.migrate(database)
+
+            database.query("SELECT configVersion, enableJevGate, signalRankerVersion FROM processing_configs").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(2L, cursor.getLong(0))
+                assertEquals(1, cursor.getInt(1))
+                assertEquals(1, cursor.getInt(2))
+            }
+
+            database.query(
+                "SELECT localId, signalScore, rankerVersion, signalTags, wasEvidenceCandidate, wasSelectedForEvidence, evidencePosition, nearDuplicateClusterSize FROM comments"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("comment-1", cursor.getString(0))
+                assertTrue(cursor.isNull(1))
+                assertTrue(cursor.isNull(2))
+                assertTrue(cursor.isNull(3))
+                assertEquals(0, cursor.getInt(4))
+                assertEquals(0, cursor.getInt(5))
+                assertEquals(-1, cursor.getInt(6))
+                assertEquals(1, cursor.getInt(7))
+            }
+        } finally {
+            helper.close()
+            context.deleteDatabase("analysis-migration-5-6-test.db")
+        }
+    }
 }

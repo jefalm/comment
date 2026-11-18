@@ -362,8 +362,44 @@ class AnalysisOrchestratorTest {
         updatedAt = now
     )
 
+    @Test
+    fun v3ConfigNoJevPipelinePassesLocalFilterDirectlyToCompletedWithSignalScoreAndTags() = runBlocking {
+        addComment(comment("v3-comment", "Check out timestamp 04:12 for great info! However I disagree.").copy(processingConfigVersion = 3L))
+
+        val v3Config = ProcessingConfigEntity(
+            configVersion = 3L,
+            jevModelRequested = "jev-1.14.0",
+            jevRejectThreshold = 0.3,
+            jevPassThreshold = 0.7,
+            glmModelRequested = "z-ai/glm-5.3-flash",
+            enableJevGate = false,
+            signalRankerVersion = 1,
+            youtubeKeyCiphertext = null,
+            openrouterKeyCiphertext = null,
+            openrouterReferer = null,
+            createdAt = now,
+            isActive = true
+        )
+
+        val result = orchestrator().run(IMPORT_ID, v3Config)
+
+        assertEquals(0, gateCalls)
+        assertEquals(0, glmCalls)
+        assertEquals(0, result.attemptedJevBatches)
+        assertFalse(result.remoteProcessingBlocked)
+
+        val saved = requireNotNull(database.commentDao().getCommentById("v3-comment"))
+        assertEquals(ProcessingState.COMPLETED, saved.processingState)
+        assertEquals(ProcessingStage.DONE, saved.currentStage)
+        assertTrue(saved.signalScore != null)
+        assertEquals(1, saved.rankerVersion)
+        val tags = saved.signalTags ?: ""
+        assertTrue(tags.contains("debate"))
+        assertTrue(tags.contains("timestamp"))
+    }
+
     private companion object {
         const val IMPORT_ID = "import-orchestration"
-        const val CONFIG_VERSION = 3L
+        const val CONFIG_VERSION = 2L
     }
 }

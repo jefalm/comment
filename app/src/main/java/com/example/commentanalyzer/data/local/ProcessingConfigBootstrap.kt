@@ -4,6 +4,9 @@ import androidx.room.withTransaction
 import com.example.commentanalyzer.data.local.entity.ProcessingConfigEntity
 
 object ProcessingConfigBootstrap {
+    const val CONFIG_VERSION_V1 = 1L
+    const val CONFIG_VERSION_V2 = 2L
+    const val CONFIG_VERSION_V3 = 3L
     const val CURRENT_CONFIG_VERSION = 2L
     const val JEV_MODEL = "jev-1.14.0"
     const val LEGACY_JEV_MODEL = "typesafe/jev-1.14"
@@ -18,12 +21,14 @@ object ProcessingConfigBootstrap {
 
     fun createDefaultV2Config(createdAt: Long = System.currentTimeMillis()): ProcessingConfigEntity =
         ProcessingConfigEntity(
-            configVersion = CURRENT_CONFIG_VERSION,
+            configVersion = CONFIG_VERSION_V2,
             jevModelRequested = JEV_MODEL,
             jevRejectThreshold = JEV_REJECT_THRESHOLD,
             jevPassThreshold = JEV_PASS_THRESHOLD,
             jevAutoRejectNonEnglish = false,
             glmModelRequested = GLM_MODEL,
+            enableJevGate = true,
+            signalRankerVersion = 1,
             adapterJevEnabled = false,
             adapterGlmEnabled = false,
             adapterYoutubeEnabled = false,
@@ -34,27 +39,53 @@ object ProcessingConfigBootstrap {
             isActive = true
         )
 
-    suspend fun bootstrapActiveConfig(database: AppDatabase): ProcessingConfigEntity =
+    fun createDefaultV3Config(createdAt: Long = System.currentTimeMillis()): ProcessingConfigEntity =
+        ProcessingConfigEntity(
+            configVersion = CONFIG_VERSION_V3,
+            jevModelRequested = JEV_MODEL,
+            jevRejectThreshold = JEV_REJECT_THRESHOLD,
+            jevPassThreshold = JEV_PASS_THRESHOLD,
+            jevAutoRejectNonEnglish = false,
+            glmModelRequested = GLM_MODEL,
+            enableJevGate = false,
+            signalRankerVersion = 1,
+            adapterJevEnabled = false,
+            adapterGlmEnabled = false,
+            adapterYoutubeEnabled = false,
+            youtubeKeyCiphertext = null,
+            openrouterKeyCiphertext = null,
+            openrouterReferer = null,
+            createdAt = createdAt,
+            isActive = true
+        )
+
+    suspend fun bootstrapActiveConfig(
+        database: AppDatabase,
+        targetVersion: Long = CURRENT_CONFIG_VERSION
+    ): ProcessingConfigEntity =
         database.withTransaction {
             val dao = database.processingConfigDao()
-            val existingV2 = dao.getConfigByVersion(CURRENT_CONFIG_VERSION)
-            if (existingV2 != null) {
-                val needsModelNormalization = existingV2.jevModelRequested == LEGACY_JEV_MODEL
-                val targetModel = if (needsModelNormalization) JEV_MODEL else existingV2.jevModelRequested
-                if (!existingV2.isActive || needsModelNormalization) {
-                    dao.deactivateAllExcept(CURRENT_CONFIG_VERSION)
-                    val updated = existingV2.copy(
+            val existing = dao.getConfigByVersion(targetVersion)
+            if (existing != null) {
+                val needsModelNormalization = existing.jevModelRequested == LEGACY_JEV_MODEL
+                val targetModel = if (needsModelNormalization) JEV_MODEL else existing.jevModelRequested
+                if (!existing.isActive || needsModelNormalization) {
+                    dao.deactivateAllExcept(targetVersion)
+                    val updated = existing.copy(
                         isActive = true,
                         jevModelRequested = targetModel
                     )
                     dao.insertConfig(updated)
                     updated
                 } else {
-                    existingV2
+                    existing
                 }
             } else {
-                dao.deactivateAllExcept(CURRENT_CONFIG_VERSION)
-                val newConfig = createDefaultV2Config()
+                dao.deactivateAllExcept(targetVersion)
+                val newConfig = when (targetVersion) {
+                    CONFIG_VERSION_V3 -> createDefaultV3Config()
+                    else -> createDefaultV2Config()
+                }
                 dao.insertConfig(newConfig)
                 newConfig
             }

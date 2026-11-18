@@ -54,5 +54,12 @@ data class CommentEntity(
     val sourceUpdatedAtRaw: String? = null,
     val publishedAtLocalDateTimeRaw: String? = null,
     val categoryConfidence: Double? = null,
-    val sentimentConfidence: Double? = null
+    val sentimentConfidence: Double? = null,
+    val signalScore: Double? = null,
+    val rankerVersion: Int? = null,
+    val signalTags: String? = null,
+    val wasEvidenceCandidate: Boolean = false,
+    val wasSelectedForEvidence: Boolean = false,
+    val evidencePosition: Int = -1,
+    val nearDuplicateClusterSize: Int = 1
 )

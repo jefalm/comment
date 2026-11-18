@@ -51,7 +51,10 @@ class AnalysisPersistenceRepository(
     suspend fun persistLocalFilterResults(
         importId: String,
         configVersion: Long,
-        decisions: Map<String, FilterResult>
+        decisions: Map<String, FilterResult>,
+        enableJevGate: Boolean = true,
+        rankerResults: Map<String, com.example.commentanalyzer.domain.ranking.RankerResult>? = null,
+        clusterSizes: Map<String, Int>? = null
     ) = database.withTransaction {
         require(importId.isNotBlank())
         val commentDao = database.commentDao()
@@ -67,7 +70,11 @@ class AnalysisPersistenceRepository(
                 "Only imported comments can receive local-filter results"
             }
             val (state, stage) = when (decision.outcome) {
-                FilterOutcome.PASS -> ProcessingState.READY_JEV to ProcessingStage.JEV_GATE
+                FilterOutcome.PASS -> if (enableJevGate) {
+                    ProcessingState.READY_JEV to ProcessingStage.JEV_GATE
+                } else {
+                    ProcessingState.COMPLETED to ProcessingStage.DONE
+                }
                 FilterOutcome.REJECT -> ProcessingState.LOCAL_REJECTED to ProcessingStage.LOCAL_FILTER
                 FilterOutcome.REVIEW -> ProcessingState.MANUAL_REVIEW to ProcessingStage.LOCAL_FILTER
             }
@@ -91,9 +98,15 @@ class AnalysisPersistenceRepository(
                 rawPayloadJson = null,
                 createdAt = now
             )
+            val rankerRes = rankerResults?.get(commentId)
+            val clusterSize = clusterSizes?.get(commentId) ?: 1
             comment.copy(
                 processingState = state,
                 currentStage = stage,
+                signalScore = rankerRes?.score ?: comment.signalScore,
+                rankerVersion = rankerRes?.rankerVersion ?: comment.rankerVersion,
+                signalTags = rankerRes?.signalTags ?: comment.signalTags,
+                nearDuplicateClusterSize = clusterSize,
                 nextAttemptAt = null,
                 lastErrorCode = null,
                 lastErrorSummary = null,
@@ -102,6 +115,28 @@ class AnalysisPersistenceRepository(
         }
         database.analysisResultDao().insertResults(resultRows)
         check(commentDao.updateComments(updatedComments) == updatedComments.size)
+    }
+
+    suspend fun updateEvidenceTelemetry(
+        candidates: List<String>,
+        selected: List<String>,
+        evidencePositions: Map<String, Int>
+    ) = database.withTransaction {
+        val commentDao = database.commentDao()
+        val candidateComments = commentDao.getCommentsByIds(candidates)
+        val updated = candidateComments.map { comment ->
+            val isSelected = selected.contains(comment.localId)
+            val pos = evidencePositions[comment.localId] ?: -1
+            comment.copy(
+                wasEvidenceCandidate = true,
+                wasSelectedForEvidence = isSelected,
+                evidencePosition = pos,
+                updatedAt = clock()
+            )
+        }
+        if (updated.isNotEmpty()) {
+            commentDao.updateComments(updated)
+        }
     }
 
     suspend fun markStageCommentsPermanentFailure(

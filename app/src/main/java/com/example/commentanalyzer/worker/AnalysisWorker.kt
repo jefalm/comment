@@ -26,14 +26,11 @@ class AnalysisWorker(
         val hasOpenRouterKey = !app.secureCredentialStore.getApiKey(
             CommentAnalyzerApplication.OPENROUTER_API_KEY_NAME
         ).isNullOrBlank()
-        val hasTypeSafeKey = !app.secureCredentialStore.getApiKey(
-            CommentAnalyzerApplication.TYPESAFE_API_KEY_NAME
-        ).isNullOrBlank()
         val hasConsent = app.secureCredentialStore.getBoolean(
             CommentAnalyzerApplication.OPENROUTER_CONSENT_KEY,
             false
         )
-        if (!hasOpenRouterKey || !hasTypeSafeKey || !hasConsent) {
+        if (!hasOpenRouterKey || !hasConsent) {
             return Result.failure(Data.Builder().putString(KEY_ERROR, ERROR_NOT_READY).build())
         }
 

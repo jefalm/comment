@@ -12,6 +12,8 @@ data class ProcessingConfigEntity(
     val jevPassThreshold: Double,
     val jevAutoRejectNonEnglish: Boolean = false,
     val glmModelRequested: String,
+    val enableJevGate: Boolean = true,
+    val signalRankerVersion: Int = 1,
     val adapterJevEnabled: Boolean = false,
     val adapterGlmEnabled: Boolean = false,
     val adapterYoutubeEnabled: Boolean = false,

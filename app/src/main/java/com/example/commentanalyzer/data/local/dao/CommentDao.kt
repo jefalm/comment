@@ -102,7 +102,7 @@ interface CommentDao {
             COUNT(*) as totalComments,
             SUM(CASE WHEN processingState = 'LOCAL_REJECTED' THEN 1 ELSE 0 END) as locallyRejected,
             SUM(CASE WHEN processingState = 'JEV_REJECTED' THEN 1 ELSE 0 END) as jevRejected,
-            SUM(CASE WHEN processingState = 'COMPLETED' AND EXISTS (SELECT 1 FROM analysis_results r WHERE r.commentId = comments.localId AND r.processingConfigVersion = comments.processingConfigVersion AND r.stage IN ('JEV_GATE', 'GLM_ANALYSIS')) THEN 1 ELSE 0 END) as completed,
+            SUM(CASE WHEN processingState = 'COMPLETED' AND EXISTS (SELECT 1 FROM analysis_results r WHERE r.commentId = comments.localId AND r.processingConfigVersion = comments.processingConfigVersion AND r.stage IN ('JEV_GATE', 'GLM_ANALYSIS', 'LOCAL_FILTER')) THEN 1 ELSE 0 END) as completed,
             SUM(CASE WHEN processingState = 'RETRY_WAIT' THEN 1 ELSE 0 END) as retrying,
             SUM(CASE WHEN processingState = 'FAILED_PERMANENT' THEN 1 ELSE 0 END) as permanentlyFailed,
             SUM(CASE WHEN processingState IN ('JEV_IN_PROGRESS', 'GLM_IN_PROGRESS') THEN 1 ELSE 0 END) as inProgress

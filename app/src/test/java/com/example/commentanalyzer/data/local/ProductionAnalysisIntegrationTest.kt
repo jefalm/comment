@@ -191,7 +191,7 @@ class ProductionAnalysisIntegrationTest {
         isActive = true
     )
 
-    private fun comment(id: String) = CommentEntity(
+    private fun comment(id: String, text: String = "Useful comment $id") = CommentEntity(
         localId = id,
         sourceType = SourceType.YOUTUBE_API,
         sourceScopeKey = "$IMPORT_ID:scope",
@@ -200,8 +200,8 @@ class ProductionAnalysisIntegrationTest {
         videoId = "abcdefghijk",
         importId = IMPORT_ID,
         authorDisplayName = "Author",
-        originalText = "Useful comment",
-        normalizedText = "Useful comment",
+        originalText = text,
+        normalizedText = text,
         publishedAtEpochMillis = null,
         publishedAtPrecision = null,
         fingerprintVersion = 1,

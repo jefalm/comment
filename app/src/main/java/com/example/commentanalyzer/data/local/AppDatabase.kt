@@ -22,7 +22,7 @@ import com.example.commentanalyzer.data.local.entity.*
         RetryScheduleEntity::class,
         CommentSynthesisEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -114,10 +114,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE processing_configs ADD COLUMN enableJevGate INTEGER NOT NULL DEFAULT 1")
+                database.execSQL("ALTER TABLE processing_configs ADD COLUMN signalRankerVersion INTEGER NOT NULL DEFAULT 1")
+                database.execSQL("ALTER TABLE comments ADD COLUMN signalScore REAL")
+                database.execSQL("ALTER TABLE comments ADD COLUMN rankerVersion INTEGER")
+                database.execSQL("ALTER TABLE comments ADD COLUMN signalTags TEXT")
+                database.execSQL("ALTER TABLE comments ADD COLUMN wasEvidenceCandidate INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE comments ADD COLUMN wasSelectedForEvidence INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE comments ADD COLUMN evidencePosition INTEGER NOT NULL DEFAULT -1")
+                database.execSQL("ALTER TABLE comments ADD COLUMN nearDuplicateClusterSize INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
         fun create(context: Context): AppDatabase = Room.databaseBuilder(
             context.applicationContext,
             AppDatabase::class.java,
             "comment-analyzer.db"
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
     }
 }
