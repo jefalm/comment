@@ -484,7 +484,50 @@ class AnalysisOrchestratorTest {
         assertEquals(ProcessingState.COMPLETED, saved.processingState)
     }
 
-    private companion object {
+
+    @Test
+    fun largeImportProcessesInBoundedChunksAndAllCommentsAdvance() = runBlocking {
+        val totalComments = 1200
+        val v3Config = config().copy(
+            configVersion = 3L,
+            enableJevGate = false,
+            signalRankerVersion = 2
+        )
+        val comments = (1..totalComments).map { i ->
+            comment("c-$i", "Comment text number $i expressing substantive perspectives.")
+                .copy(
+                    processingConfigVersion = 3L,
+                    processingState = ProcessingState.IMPORTED,
+                    currentStage = ProcessingStage.INGESTION
+                )
+        }
+        database.commentDao().insertComments(comments)
+
+        val orchestrator = orchestrator(
+            readiness = { RemoteProcessingReadiness(hasOpenRouterKey = true, remoteProcessingConsent = true) }
+        )
+
+        val result = orchestrator.run(IMPORT_ID, v3Config)
+
+        assertEquals(totalComments, result.locallyProcessedComments)
+        assertFalse(result.remoteProcessingBlocked)
+
+        val remainingImported = database.commentDao().getImportedCommentsForAnalysis(
+            importId = IMPORT_ID,
+            configVersion = 3L,
+            limit = totalComments
+        )
+        assertTrue("All comments should have left IMPORTED/INGESTION", remainingImported.isEmpty())
+
+        val allComments = database.commentDao().getCommentsForImport(IMPORT_ID)
+        assertEquals(totalComments, allComments.size)
+        assertTrue(allComments.all { it.processingState != ProcessingState.IMPORTED })
+        assertTrue(allComments.all { it.currentStage != ProcessingStage.INGESTION })
+        assertTrue(allComments.all { it.signalScore != null })
+        assertTrue(allComments.all { it.rankerVersion == 2 })
+    }
+
+ companion object {
         const val IMPORT_ID = "import-orchestration"
         const val CONFIG_VERSION = 2L
     }

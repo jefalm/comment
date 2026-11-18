@@ -51,7 +51,8 @@ data class CommentRowUiModel(
     val text: String,
     val likes: Int?,
     val publishedAtEpochMillis: Long?,
-    val isCitedInAnalysis: Boolean = false
+    val isCitedInAnalysis: Boolean = false,
+    val isFocused: Boolean = false
 )
 
 data class CommentsUiState(
@@ -63,14 +64,17 @@ data class CommentsUiState(
     val referencedInSynthesisOnly: Boolean = false,
     val hasRepliesOnly: Boolean = false,
     val questionsOnly: Boolean = false,
-    val activeSynthesisCitedIds: Set<String> = emptySet()
+    val activeSynthesisCitedIds: Set<String> = emptySet(),
+    val focusedThreadSourceId: String? = null,
+    val focusedCommentId: String? = null
 ) {
     val activeFilterCount: Int
         get() = listOfNotNull(
             searchQuery.takeIf { it.isNotBlank() },
             referencedInSynthesisOnly.takeIf { it },
             hasRepliesOnly.takeIf { it },
-            questionsOnly.takeIf { it }
+            questionsOnly.takeIf { it },
+            focusedThreadSourceId
         ).size
 }
 
@@ -96,7 +100,9 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
                 hasCitedFilter = state.referencedInSynthesisOnly,
                 viewMode = state.viewMode.queryValue,
                 sort = state.sortMode.queryValue,
-                activeCitedIds = state.activeSynthesisCitedIds
+                activeCitedIds = state.activeSynthesisCitedIds,
+                focusedThreadSourceId = state.focusedThreadSourceId,
+                focusedCommentId = state.focusedCommentId
             )
         }
         .distinctUntilChanged()
@@ -113,9 +119,15 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
                     citedIds = request.citedIds,
                     hasCitedFilter = request.hasCitedFilter,
                     viewMode = request.viewMode,
-                    sort = request.sort
+                    sort = request.sort,
+                    focusedThreadSourceId = request.focusedThreadSourceId
                 ).map { page ->
-                    page.map { comment -> comment.toUiModel(request.activeCitedIds) }
+                    page.map { comment ->
+                        comment.toUiModel(
+                            activeCitedIds = request.activeCitedIds,
+                            focusedCommentId = request.focusedCommentId
+                        )
+                    }
                 }
             }
         }
@@ -151,18 +163,45 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
 
     fun selectImport(importId: String) {
         if (_uiState.value.scopes.any { it.importId == importId }) {
-            _uiState.update { it.copy(selectedImportId = importId) }
+            _uiState.update {
+                it.copy(
+                    selectedImportId = importId,
+                    focusedThreadSourceId = null,
+                    focusedCommentId = null
+                )
+            }
         }
     }
 
     fun focusComment(importId: String, commentId: String?) {
-        _uiState.update { state ->
-            state.copy(
-                selectedImportId = importId,
-                searchQuery = commentId ?: "",
-                referencedInSynthesisOnly = false,
-                hasRepliesOnly = false,
-                questionsOnly = false
+        viewModelScope.launch {
+            if (commentId == null) return@launch
+            val comment = repository.getCommentById(commentId) ?: return@launch
+            if (comment.importId != importId) return@launch
+
+            val threadSourceId =
+                comment.parentSourceCommentId ?: comment.sourceCommentId ?: return@launch
+
+            _uiState.update { state ->
+                state.copy(
+                    selectedImportId = importId,
+                    searchQuery = "",
+                    viewMode = CommentViewMode.THREADS,
+                    referencedInSynthesisOnly = false,
+                    hasRepliesOnly = false,
+                    questionsOnly = false,
+                    focusedThreadSourceId = threadSourceId,
+                    focusedCommentId = comment.localId
+                )
+            }
+        }
+    }
+
+    fun clearThreadFocus() {
+        _uiState.update {
+            it.copy(
+                focusedThreadSourceId = null,
+                focusedCommentId = null
             )
         }
     }
@@ -197,7 +236,9 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
                 searchQuery = "",
                 referencedInSynthesisOnly = false,
                 hasRepliesOnly = false,
-                questionsOnly = false
+                questionsOnly = false,
+                focusedThreadSourceId = null,
+                focusedCommentId = null
             )
         }
     }
@@ -211,7 +252,9 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
         val hasCitedFilter: Boolean,
         val viewMode: Int,
         val sort: Int,
-        val activeCitedIds: Set<String>
+        val activeCitedIds: Set<String>,
+        val focusedThreadSourceId: String?,
+        val focusedCommentId: String?
     )
 
     private fun ImportEntity.toScopeOption() = CommentScopeOption(
@@ -229,7 +272,10 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
         else -> R.string.comments_source_other
     }
 
-    private fun CommentEntity.toUiModel(activeCitedIds: Set<String>) = CommentRowUiModel(
+    private fun CommentEntity.toUiModel(
+        activeCitedIds: Set<String>,
+        focusedCommentId: String? = null
+    ) = CommentRowUiModel(
         stableId = localId,
         importId = importId,
         sourceLabelRes = sourceType.toDisplayNameRes(),
@@ -239,6 +285,7 @@ class CommentsViewModel(application: Application) : AndroidViewModel(application
         text = originalText,
         likes = likeCount,
         publishedAtEpochMillis = publishedAtEpochMillis,
-        isCitedInAnalysis = localId in activeCitedIds
+        isCitedInAnalysis = localId in activeCitedIds,
+        isFocused = localId == focusedCommentId
     )
 }

@@ -187,6 +187,11 @@ interface CommentDao {
         SELECT * FROM comments
         WHERE importId = :importId
             AND (
+                :focusedThreadSourceId IS NULL
+                OR sourceCommentId = :focusedThreadSourceId
+                OR parentSourceCommentId = :focusedThreadSourceId
+            )
+            AND (
                 :query = ''
                 OR originalText LIKE '%' || :query || '%' COLLATE NOCASE
                 OR authorDisplayName LIKE '%' || :query || '%' COLLATE NOCASE
@@ -272,7 +277,8 @@ interface CommentDao {
         citedIds: List<String> = listOf(""),
         hasCitedFilter: Int = 0,
         viewMode: Int = 1,
-        sort: Int = 0
+        sort: Int = 0,
+        focusedThreadSourceId: String? = null
     ): PagingSource<Int, CommentEntity>
 
     @Query("SELECT * FROM comments WHERE processingState = :state ORDER BY publishedAtEpochMillis DESC")

@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.example.commentanalyzer.AnalysisAppContainer
 import com.example.commentanalyzer.CommentAnalyzerApplication
+import com.example.commentanalyzer.data.local.AnalysisRunResult
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
@@ -38,6 +39,14 @@ class AnalysisWorker(
         val result = container.runAnalysis(importId, configVersion)
         if (result.remoteProcessingBlocked) {
             return Result.failure(Data.Builder().putString(KEY_ERROR, ERROR_NOT_READY).build())
+        }
+        if (shouldContinueAfterLocalProcessing(result)) {
+            enqueueContinuation(applicationContext, importId, configVersion)
+            return Result.success(
+                Data.Builder()
+                    .putBoolean(KEY_NO_WORK, false)
+                    .build()
+            )
         }
         if (app.database.processingBatchDao().hasPendingAnalysisBatches(
                 importId,
@@ -100,5 +109,26 @@ class AnalysisWorker(
                 request
             )
         }
+
+        internal fun enqueueContinuation(context: Context, importId: String, configVersion: Long) {
+            val request = OneTimeWorkRequestBuilder<AnalysisWorker>()
+                .setInputData(
+                    Data.Builder()
+                        .putString(KEY_IMPORT_ID, importId)
+                        .putLong(KEY_CONFIG_VERSION, configVersion)
+                        .build()
+                )
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                uniqueWorkName(importId, configVersion),
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
+                request
+            )
+        }
     }
 }
+
+internal fun shouldContinueAfterLocalProcessing(
+    result: AnalysisRunResult
+): Boolean = result.locallyProcessedComments > 0

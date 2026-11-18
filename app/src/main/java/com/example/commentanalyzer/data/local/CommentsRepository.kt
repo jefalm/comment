@@ -40,6 +40,9 @@ class CommentsRepository(
         }
     }
 
+    suspend fun getCommentById(commentId: String): CommentEntity? =
+        commentDao.getCommentById(commentId)
+
     fun pagingComments(
         importId: String,
         query: String,
@@ -48,7 +51,8 @@ class CommentsRepository(
         citedIds: List<String> = emptyList(),
         hasCitedFilter: Boolean = false,
         viewMode: Int = 1,
-        sort: Int = 0
+        sort: Int = 0,
+        focusedThreadSourceId: String? = null
     ): Flow<PagingData<CommentEntity>> = Pager(
         config = PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false),
         pagingSourceFactory = {
@@ -60,7 +64,8 @@ class CommentsRepository(
                 citedIds = if (hasCitedFilter && citedIds.isNotEmpty()) citedIds else listOf(""),
                 hasCitedFilter = if (hasCitedFilter) 1 else 0,
                 viewMode = viewMode,
-                sort = sort
+                sort = sort,
+                focusedThreadSourceId = focusedThreadSourceId
             )
         }
     ).flow

@@ -81,12 +81,23 @@ class AnalysisOrchestrator(
         require(effectiveConfig.jevRejectThreshold < effectiveConfig.jevPassThreshold)
 
         val startRunTime = clock()
-        val imported = database.commentDao().getImportedCommentsForAnalysis(
-            importId = importId,
-            configVersion = effectiveConfig.configVersion,
-            limit = MAX_COMMENTS_PER_RUN
-        )
-        if (imported.isNotEmpty()) {
+        var processedThisRun = 0
+
+        while (processedThisRun < MAX_COMMENTS_PER_RUN) {
+            val limit = minOf(
+                LOCAL_PROCESSING_CHUNK_SIZE,
+                MAX_COMMENTS_PER_RUN - processedThisRun
+            )
+
+            val imported = database.commentDao().getImportedCommentsForAnalysis(
+                importId = importId,
+                configVersion = effectiveConfig.configVersion,
+                limit = limit
+            )
+            if (imported.isEmpty()) {
+                break
+            }
+
             telemetryRecorder?.recordEvent(TelemetryEvent.Discovered(imported.size))
             val batchFilterResults = LocalFilter.evaluateBatch(imported)
             val evaluations = batchFilterResults.mapValues { it.value.filterResult }
@@ -111,12 +122,13 @@ class AnalysisOrchestrator(
                 rankerResults = rankerResults,
                 clusterSizes = clusterSizes
             )
+            processedThisRun += imported.size
         }
 
         if (!effectiveConfig.enableJevGate) {
             val totalMs = clock() - startRunTime
             telemetryRecorder?.recordEvent(TelemetryEvent.Timing(0L, 0L, 0L, totalMs, totalMs))
-            return AnalysisRunResult(imported.size, false, 0, 0)
+            return AnalysisRunResult(processedThisRun, false, 0, 0)
         }
 
         val readyState = readiness()
@@ -125,7 +137,7 @@ class AnalysisOrchestrator(
         if (!jevReady) {
             val totalMs = clock() - startRunTime
             telemetryRecorder?.recordEvent(TelemetryEvent.Timing(0L, 0L, 0L, totalMs, totalMs))
-            return AnalysisRunResult(imported.size, true, 0, 0)
+            return AnalysisRunResult(processedThisRun, true, 0, 0)
         }
 
         val jevCount = processStage(
@@ -140,7 +152,7 @@ class AnalysisOrchestrator(
         val isBlocked = !readyState.isReady
         val totalMs = clock() - startRunTime
         telemetryRecorder?.recordEvent(TelemetryEvent.Timing(0L, 0L, 0L, totalMs, totalMs))
-        return AnalysisRunResult(imported.size, isBlocked, jevCount, glmCount)
+        return AnalysisRunResult(processedThisRun, isBlocked, jevCount, glmCount)
     }
 
     private suspend fun processStage(
@@ -448,6 +460,7 @@ class AnalysisOrchestrator(
         const val GLM_MODEL = "z-ai/glm-5.3-flash"
         const val GATE_QUESTION_KEY = "comment_quality_gate"
         const val MAX_COMMENTS_PER_RUN = 5_000
+        const val LOCAL_PROCESSING_CHUNK_SIZE = 250
         val ERROR_CODE = Regex("[A-Z0-9][A-Z0-9_]{0,63}")
     }
 }

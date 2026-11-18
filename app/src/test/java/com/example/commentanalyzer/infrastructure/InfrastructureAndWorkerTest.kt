@@ -1,11 +1,15 @@
 package com.example.commentanalyzer.infrastructure
 
+import com.example.commentanalyzer.data.local.AnalysisRunResult
+import com.example.commentanalyzer.ingestion.youtube.YouTubeVideoIdParser
 import com.example.commentanalyzer.network.dto.youtube.CommentThreadItem
 import com.example.commentanalyzer.network.dto.youtube.CommentThreadListResponse
-import com.example.commentanalyzer.ingestion.youtube.YouTubeVideoIdParser
 import com.example.commentanalyzer.worker.CommentAnalyzerWorker
+import com.example.commentanalyzer.worker.shouldContinueAfterLocalProcessing
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class InfrastructureAndWorkerTest {
@@ -33,5 +37,41 @@ class InfrastructureAndWorkerTest {
     fun testWorkerConstants() {
         assertEquals("comment_analyzer_ingestion_work", CommentAnalyzerWorker.WORK_NAME_INGESTION)
         assertEquals("comment_analyzer_coordinator_work", CommentAnalyzerWorker.WORK_NAME_COORDINATOR)
+    }
+
+    @Test
+    fun analysisWorkerRequiresContinuationAfterAnyLocalProcessing() {
+        assertFalse(
+            shouldContinueAfterLocalProcessing(
+                AnalysisRunResult(
+                    locallyProcessedComments = 0,
+                    remoteProcessingBlocked = false,
+                    attemptedJevBatches = 0,
+                    attemptedGlmBatches = 0
+                )
+            )
+        )
+
+        assertTrue(
+            shouldContinueAfterLocalProcessing(
+                AnalysisRunResult(
+                    locallyProcessedComments = 1,
+                    remoteProcessingBlocked = false,
+                    attemptedJevBatches = 0,
+                    attemptedGlmBatches = 0
+                )
+            )
+        )
+
+        assertTrue(
+            shouldContinueAfterLocalProcessing(
+                AnalysisRunResult(
+                    locallyProcessedComments = 250,
+                    remoteProcessingBlocked = false,
+                    attemptedJevBatches = 0,
+                    attemptedGlmBatches = 0
+                )
+            )
+        )
     }
 }

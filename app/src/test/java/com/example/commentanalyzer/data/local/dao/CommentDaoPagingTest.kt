@@ -143,6 +143,27 @@ class CommentDaoPagingTest {
         assertEquals(listOf("import-a"), imports.map(ImportEntity::importId))
     }
 
+    @Test
+    fun threadFocusFiltersToRootAndRepliesAndExcludesUnrelated() = runBlocking {
+        dao.insertComments(
+            listOf(
+                comment("root-1", "import-1", "Root 1", 1000L, null),
+                comment("reply-1", "import-1", "Reply 1.1", 1010L, "source-root-1"),
+                comment("reply-2", "import-1", "Reply 1.2", 1020L, "source-root-1"),
+                comment("root-2", "import-1", "Root 2", 2000L, null),
+                comment("reply-2-1", "import-1", "Reply 2.1", 2010L, "source-root-2")
+            )
+        )
+
+        // Root focus returns root and its replies in order, excludes unrelated
+        val rootFocusResult = load(dao.pagingComments(importId = "import-1", viewMode = 1, focusedThreadSourceId = "source-root-1"))
+        assertEquals(listOf("root-1", "reply-1", "reply-2"), rootFocusResult.map { it.localId })
+
+        // Null focus restores normal results (both threads present)
+        val normalResult = load(dao.pagingComments(importId = "import-1", viewMode = 1, focusedThreadSourceId = null))
+        assertEquals(5, normalResult.size)
+    }
+
     private suspend fun load(source: PagingSource<Int, CommentEntity>): List<CommentEntity> {
         val result = source.load(
             PagingSource.LoadParams.Refresh(

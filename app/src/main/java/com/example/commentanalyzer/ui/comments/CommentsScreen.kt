@@ -91,6 +91,30 @@ fun CommentsScreen(viewModel: CommentsViewModel, modifier: Modifier = Modifier) 
                 )
             }
 
+            if (state.focusedThreadSourceId != null) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Focused thread",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        TextButton(onClick = viewModel::clearThreadFocus) {
+                            Text("Clear")
+                        }
+                    }
+                }
+            }
+
             if (state.activeFilterCount > 0) {
                 OutlinedButton(
                     onClick = viewModel::clearAllFilters,
@@ -240,7 +264,19 @@ private fun CommentRow(
             )
             Spacer(modifier = Modifier.width(8.dp))
         }
-        Card(modifier = Modifier.weight(1f)) {
+        Card(
+            modifier = Modifier.weight(1f),
+            colors = if (comment.isFocused) {
+                CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            } else {
+                CardDefaults.cardColors()
+            },
+            border = if (comment.isFocused) {
+                androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+            } else {
+                null
+            }
+        ) {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp)
