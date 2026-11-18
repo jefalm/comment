@@ -47,24 +47,35 @@ class ProcessingConfigBootstrapTest {
     }
 
     @Test
-    fun bootstrapCreatesActiveConfigV2AndIsIdempotent() = runBlocking {
+    fun bootstrapCreatesActiveConfigV3AndIsIdempotent() = runBlocking {
         // 1. Fresh database bootstrap
         val first = ProcessingConfigBootstrap.bootstrapActiveConfig(database)
-        assertEquals(2L, first.configVersion)
+        assertEquals(3L, first.configVersion)
         assertTrue(first.isActive)
+        assertEquals(false, first.enableJevGate)
+        assertEquals(2, first.signalRankerVersion)
         assertEquals("jev-1.14.0", first.jevModelRequested)
         assertEquals("z-ai/glm-5.3-flash", first.glmModelRequested)
 
         val active = database.processingConfigDao().getActiveConfig()
         assertNotNull(active)
-        assertEquals(2L, active?.configVersion)
-        assertEquals("jev-1.14.0", active?.jevModelRequested)
+        assertEquals(3L, active?.configVersion)
+        assertEquals(false, active?.enableJevGate)
+        assertEquals(2, active?.signalRankerVersion)
 
         // 2. Idempotent bootstrap call
         val second = ProcessingConfigBootstrap.bootstrapActiveConfig(database)
-        assertEquals(2L, second.configVersion)
+        assertEquals(3L, second.configVersion)
         assertTrue(second.isActive)
         assertEquals("jev-1.14.0", second.jevModelRequested)
+    }
+
+    @Test
+    fun bootstrapSupportsHistoricalV2Explicitly() = runBlocking {
+        val v2 = ProcessingConfigBootstrap.bootstrapActiveConfig(database, targetVersion = 2L)
+        assertEquals(2L, v2.configVersion)
+        assertTrue(v2.enableJevGate)
+        assertEquals(1, v2.signalRankerVersion)
     }
 
     @Test
@@ -76,8 +87,8 @@ class ProcessingConfigBootstrapTest {
         )
         database.processingConfigDao().insertConfig(legacyConfig)
 
-        // When bootstrap runs
-        val result = ProcessingConfigBootstrap.bootstrapActiveConfig(database)
+        // When bootstrap runs for historical v2
+        val result = ProcessingConfigBootstrap.bootstrapActiveConfig(database, targetVersion = 2L)
 
         // Then model is safely normalized to canonical jev-1.14.0
         assertEquals("jev-1.14.0", result.jevModelRequested)
@@ -157,7 +168,7 @@ class ProcessingConfigBootstrapTest {
     }
 
     @Test
-    fun newYouTubeImportUsesActiveConfigV2() = runBlocking {
+    fun newYouTubeImportUsesActiveConfigV3() = runBlocking {
         ProcessingConfigBootstrap.bootstrapActiveConfig(database)
 
         val sink = RoomYouTubeImportPageSink(database)
@@ -181,7 +192,7 @@ class ProcessingConfigBootstrapTest {
 
         val imported = database.importDao().getImportById("new-yt-import")
         assertNotNull(imported)
-        assertEquals(2, imported?.sourceConfigVersion)
+        assertEquals(3, imported?.sourceConfigVersion)
 
         sink.persistThreadPage(
             importId = "new-yt-import",
@@ -206,7 +217,7 @@ class ProcessingConfigBootstrapTest {
 
         val comments = database.commentDao().getCommentsForImport("new-yt-import")
         assertEquals(1, comments.size)
-        assertEquals(2L, comments.first().processingConfigVersion)
+        assertEquals(3L, comments.first().processingConfigVersion)
     }
 
     @Test
@@ -232,13 +243,13 @@ class ProcessingConfigBootstrapTest {
 
         val imported = database.importDao().getImportById("new-txt-import")
         assertNotNull(imported)
-        assertEquals(2, imported?.sourceConfigVersion)
+        assertEquals(3, imported?.sourceConfigVersion)
 
         val comments = database.commentDao().getCommentsForImport("new-txt-import")
         assertTrue(comments.isNotEmpty())
-        assertTrue(comments.all { it.processingConfigVersion == 2L })
+        assertTrue(comments.all { it.processingConfigVersion == 3L })
 
-        // Verify AnalysisReadRepository observes config 2
+        // Verify AnalysisReadRepository observes config 3
         val readRepo = AnalysisReadRepository(
             commentDao = database.commentDao(),
             importDao = database.importDao(),
@@ -246,6 +257,6 @@ class ProcessingConfigBootstrapTest {
             commentSynthesisDao = database.commentSynthesisDao()
         )
         val versions = readRepo.observeConfigVersions("new-txt-import").first()
-        assertEquals(listOf(2L), versions)
+        assertEquals(listOf(3L), versions)
     }
 }

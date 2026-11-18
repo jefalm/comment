@@ -12,13 +12,12 @@ import org.junit.Test
 class EvidencePlannerCalibrationTest {
 
     @Test
-    fun normalNonCalibrationBehaviorUnchangedAndCappedAt30() {
+    fun normalNonCalibrationBehaviorAdaptiveTargetUnder80() {
         val comments = (1..60).map { i ->
             comment("c-$i", "Regular comment number $i with enough text.", likes = i)
         }
         val normalEvidence = EvidencePlanner.planEvidence(comments, isCalibrationRun = false)
-        assertTrue(normalEvidence.size <= 30)
-        assertEquals(30, normalEvidence.size)
+        assertEquals(60, normalEvidence.size)
     }
 
     @Test

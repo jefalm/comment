@@ -7,7 +7,7 @@ object ProcessingConfigBootstrap {
     const val CONFIG_VERSION_V1 = 1L
     const val CONFIG_VERSION_V2 = 2L
     const val CONFIG_VERSION_V3 = 3L
-    const val CURRENT_CONFIG_VERSION = 2L
+    const val CURRENT_CONFIG_VERSION = 3L
     const val JEV_MODEL = "jev-1.14.0"
     const val LEGACY_JEV_MODEL = "typesafe/jev-1.14"
     const val GLM_MODEL = "z-ai/glm-5.3-flash"
@@ -48,7 +48,7 @@ object ProcessingConfigBootstrap {
             jevAutoRejectNonEnglish = false,
             glmModelRequested = GLM_MODEL,
             enableJevGate = false,
-            signalRankerVersion = 1,
+            signalRankerVersion = 2,
             adapterJevEnabled = false,
             adapterGlmEnabled = false,
             adapterYoutubeEnabled = false,

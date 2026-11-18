@@ -78,6 +78,25 @@ class AnalysisActionControllerTest {
         assertNotEquals(original, AnalysisWorker.uniqueWorkName("other-import", CONFIG_VERSION))
     }
 
+    @Test
+    fun controllerPassesRequestedConfigVersionToReadiness() {
+        var checkedVersion: Long? = null
+        val controller = AnalysisActionController(
+            isReady = { version ->
+                checkedVersion = version
+                version == 3L
+            },
+            enqueue = { _, _ -> },
+            onStateChanged = { _, _, _, _ -> }
+        )
+
+        assertFalse(controller.start("import-v2", 2L))
+        assertEquals(2L, checkedVersion)
+
+        assertTrue(controller.start("import-v3", 3L))
+        assertEquals(3L, checkedVersion)
+    }
+
     private fun controller(
         ready: Boolean = true,
         enqueue: (String, Long) -> Unit = { _, _ -> },

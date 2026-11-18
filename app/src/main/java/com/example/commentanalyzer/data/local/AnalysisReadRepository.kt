@@ -7,6 +7,7 @@ import com.example.commentanalyzer.data.local.dao.CommentDao
 import com.example.commentanalyzer.data.local.dao.CommentSynthesisDao
 import com.example.commentanalyzer.data.local.dao.ImportDao
 import com.example.commentanalyzer.data.local.dao.ProcessingBatchDao
+import com.example.commentanalyzer.data.local.entity.CommentEntity
 import com.example.commentanalyzer.domain.model.SynthesisResult
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
@@ -72,4 +73,7 @@ class AnalysisReadRepository(
             }
             AnalysisSummary(processing, categories, sentiments, usage, parsedSynthesis)
         }
+
+    suspend fun getCommentsByIds(ids: List<String>): List<CommentEntity> =
+        if (ids.isEmpty()) emptyList() else commentDao.getCommentsByIds(ids)
 }

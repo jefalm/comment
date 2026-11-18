@@ -69,7 +69,13 @@ class OpenRouterGlmSynthesisAdapterTest {
         val secondPlan = EvidencePlanner.planEvidence(comments)
 
         assertEquals(firstPlan.map { it.commentId }, secondPlan.map { it.commentId })
-        assertTrue(firstPlan.size <= 30)
+        assertTrue(firstPlan.size <= EvidencePlanner.MAX_EVIDENCE_ITEMS)
+        val totalBytes = firstPlan.sumOf { it.text.toByteArray(Charsets.UTF_8).size.toLong() }
+        val totalTokens = firstPlan.sumOf { (it.text.length / 4).coerceAtLeast(1).toLong() }
+        assertTrue(totalBytes <= EvidencePlanner.MAX_EVIDENCE_BYTES)
+        assertTrue(totalTokens <= EvidencePlanner.MAX_EVIDENCE_TOKENS)
+        assertEquals(firstPlan.size, firstPlan.distinctBy { it.commentId }.size)
+        assertTrue(comments.map { it.localId }.containsAll(firstPlan.map { it.commentId }))
     }
 
     @Test

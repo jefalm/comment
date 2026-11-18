@@ -92,6 +92,23 @@ class AnalysisReadRepositoryTest {
     }
 
     @Test
+    fun getCommentsByIdsReturnsMatchingEntities() = runBlocking {
+        val c1 = comment("c1", "import-a", 1L, ProcessingState.COMPLETED)
+        val c2 = comment("c2", "import-a", 1L, ProcessingState.COMPLETED)
+        val c3 = comment("c3", "import-b", 1L, ProcessingState.COMPLETED)
+        database.commentDao().insertComments(listOf(c1, c2, c3))
+
+        val resolved = repository.getCommentsByIds(listOf("c2", "c1", "c3"))
+        assertEquals(3, resolved.size)
+
+        // When filtered by importId and ordered by citation list:
+        val ordered = listOf("c2", "c1").mapNotNull { id ->
+            resolved.firstOrNull { it.localId == id && it.importId == "import-a" }
+        }
+        assertEquals(listOf("c2", "c1"), ordered.map { it.localId })
+    }
+
+    @Test
     fun usageTotalsSumKnownSuccessfulBatchesWithoutImportOrConfigContamination() = runBlocking {
         database.processingBatchDao().insertBatch(
             batch("jev-known", "import-a", 7, ProcessingStage.JEV_GATE, 100, 10, 0.01)

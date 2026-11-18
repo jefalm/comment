@@ -139,13 +139,25 @@ fun AnalysisScreen(
                 state.isLoading -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 state.summary != null -> AnalysisSummaryContent(
                     summary = requireNotNull(state.summary),
-                    importId = state.selectedImportId,
-                    onNavigateToComments = onNavigateToComments
+                    onShowEvidence = { title, ids -> viewModel.showEvidence(title, ids) }
                 )
             }
         } else if (state.isLoading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
+    }
+
+    state.evidenceSheetState?.let { sheetState ->
+        EvidenceBottomSheet(
+            sheetState = sheetState,
+            onDismissRequest = viewModel::dismissEvidence,
+            onJumpToThread = { commentId ->
+                viewModel.dismissEvidence()
+                state.selectedImportId?.let { importId ->
+                    onNavigateToComments(importId, commentId)
+                }
+            }
+        )
     }
 }
 
@@ -196,8 +208,7 @@ private fun ConfigSelector(state: AnalysisUiState, viewModel: AnalysisViewModel)
 @Composable
 internal fun AnalysisSummaryContent(
     summary: AnalysisSummary,
-    importId: String?,
-    onNavigateToComments: (String, String?) -> Unit
+    onShowEvidence: (title: String, citedCommentIds: List<String>) -> Unit = { _, _ -> }
 ) {
     val processing = summary.processing
     val synthesis = summary.synthesis
@@ -269,7 +280,7 @@ internal fun AnalysisSummaryContent(
                                     horizontalArrangement = Arrangement.End
                                 ) {
                                     OutlinedButton(
-                                        onClick = { importId?.let { onNavigateToComments(it, theme.citedCommentIds.first()) } }
+                                        onClick = { onShowEvidence(theme.title, theme.citedCommentIds) }
                                     ) {
                                         Text("View evidence (${theme.citedCommentIds.size})")
                                     }
@@ -318,7 +329,7 @@ internal fun AnalysisSummaryContent(
                                         horizontalArrangement = Arrangement.End
                                     ) {
                                         OutlinedButton(
-                                            onClick = { importId?.let { onNavigateToComments(it, agreement.citedCommentIds.first()) } }
+                                            onClick = { onShowEvidence(agreement.topic, agreement.citedCommentIds) }
                                         ) {
                                             Text("View evidence (${agreement.citedCommentIds.size})")
                                         }
@@ -389,7 +400,12 @@ internal fun AnalysisSummaryContent(
                                     horizontalArrangement = Arrangement.End
                                 ) {
                                     OutlinedButton(
-                                        onClick = { importId?.let { onNavigateToComments(it, perspective.citedCommentIds.first()) } }
+                                        onClick = {
+                                            onShowEvidence(
+                                                "${perspective.perspectiveA} vs ${perspective.perspectiveB}",
+                                                perspective.citedCommentIds
+                                            )
+                                        }
                                     ) {
                                         Text("View evidence (${perspective.citedCommentIds.size})")
                                     }
@@ -431,7 +447,7 @@ internal fun AnalysisSummaryContent(
                                     horizontalArrangement = Arrangement.End
                                 ) {
                                     OutlinedButton(
-                                        onClick = { importId?.let { onNavigateToComments(it, insight.citedCommentIds.first()) } }
+                                        onClick = { onShowEvidence(insight.insight, insight.citedCommentIds) }
                                     ) {
                                         Text("View evidence (${insight.citedCommentIds.size})")
                                     }

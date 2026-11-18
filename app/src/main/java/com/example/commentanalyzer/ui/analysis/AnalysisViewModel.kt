@@ -10,6 +10,7 @@ import com.example.commentanalyzer.CommentAnalyzerApplication
 import com.example.commentanalyzer.data.local.AnalysisImportOption
 import com.example.commentanalyzer.data.local.AnalysisSummary
 import com.example.commentanalyzer.data.local.dao.AnalysisProcessingCounts
+import com.example.commentanalyzer.data.local.entity.CommentEntity
 import com.example.commentanalyzer.worker.AnalysisWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.catch
@@ -33,6 +34,12 @@ enum class AnalysisActionMessage {
     CANCELLED
 }
 
+data class EvidenceSheetState(
+    val title: String,
+    val totalCitedCount: Int,
+    val comments: List<CommentEntity>
+)
+
 data class AnalysisUiState(
     val imports: List<AnalysisImportOption> = emptyList(),
     val selectedImportId: String? = null,
@@ -43,7 +50,8 @@ data class AnalysisUiState(
     val hasError: Boolean = false,
     val isRemoteProcessingReady: Boolean = false,
     val isAnalysisRunning: Boolean = false,
-    val analysisActionMessage: AnalysisActionMessage? = null
+    val analysisActionMessage: AnalysisActionMessage? = null,
+    val evidenceSheetState: EvidenceSheetState? = null
 )
 
 class AnalysisViewModel(application: Application) : AndroidViewModel(application) {
@@ -55,7 +63,7 @@ class AnalysisViewModel(application: Application) : AndroidViewModel(application
     val uiState = _uiState.asStateFlow()
     private val workManager = WorkManager.getInstance(app)
     private val analysisAction = AnalysisActionController(
-        isReady = ::isRemoteProcessingReady,
+        isReady = { configVersion -> isRemoteProcessingReady(configVersion) },
         enqueue = { importId, configVersion ->
             AnalysisWorker.enqueue(app, importId, configVersion)
         },
@@ -113,7 +121,8 @@ class AnalysisViewModel(application: Application) : AndroidViewModel(application
                             selectedConfigVersion = selectedVersion,
                             summary = if (selectedVersion == state.selectedConfigVersion) state.summary else null,
                             isLoading = selectedVersion != null && state.summary == null,
-                            hasError = false
+                            hasError = false,
+                            isRemoteProcessingReady = isRemoteProcessingReady(selectedVersion)
                         )
                     }
                 }
@@ -225,14 +234,15 @@ class AnalysisViewModel(application: Application) : AndroidViewModel(application
                     isLoading = true,
                     hasError = false,
                     isAnalysisRunning = false,
-                    analysisActionMessage = null
+                    analysisActionMessage = null,
+                    isRemoteProcessingReady = isRemoteProcessingReady(configVersion)
                 )
             }
         }
     }
 
     fun refreshRemoteProcessingReadiness() {
-        _uiState.update { it.copy(isRemoteProcessingReady = isRemoteProcessingReady()) }
+        _uiState.update { it.copy(isRemoteProcessingReady = isRemoteProcessingReady(it.selectedConfigVersion)) }
     }
 
     fun analyzeSelectedImport() {
@@ -243,14 +253,40 @@ class AnalysisViewModel(application: Application) : AndroidViewModel(application
         analysisAction.start(importId, configVersion)
     }
 
-    private fun isRemoteProcessingReady(): Boolean = runCatching {
-        !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.OPENROUTER_API_KEY_NAME).isNullOrBlank() &&
-            !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.TYPESAFE_API_KEY_NAME).isNullOrBlank() &&
-            app.secureCredentialStore.getBoolean(
+    fun showEvidence(title: String, citedCommentIds: List<String>) {
+        val importId = _uiState.value.selectedImportId ?: return
+        if (citedCommentIds.isEmpty()) return
+        viewModelScope.launch {
+            val rawComments = repository.getCommentsByIds(citedCommentIds)
+            val ordered = filterAndOrderEvidenceComments(rawComments, importId, citedCommentIds)
+            _uiState.update {
+                it.copy(
+                    evidenceSheetState = EvidenceSheetState(
+                        title = title,
+                        totalCitedCount = citedCommentIds.size,
+                        comments = ordered
+                    )
+                )
+            }
+        }
+    }
+
+    fun dismissEvidence() {
+        _uiState.update { it.copy(evidenceSheetState = null) }
+    }
+
+    fun isRemoteProcessingReady(configVersion: Long? = _uiState.value.selectedConfigVersion): Boolean {
+        if (configVersion == null) return false
+        return runCatching {
+            val hasOpenRouter = !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.OPENROUTER_API_KEY_NAME).isNullOrBlank()
+            val hasConsent = app.secureCredentialStore.getBoolean(
                 CommentAnalyzerApplication.OPENROUTER_CONSENT_KEY,
                 false
             )
-    }.getOrDefault(false)
+            val hasTypeSafe = !app.secureCredentialStore.getApiKey(CommentAnalyzerApplication.TYPESAFE_API_KEY_NAME).isNullOrBlank()
+            computeConfigReadiness(configVersion, hasOpenRouter, hasTypeSafe, hasConsent)
+        }.getOrDefault(false)
+    }
 
     private data class SummaryRequest(val importId: String?, val configVersion: Long?)
 
@@ -260,6 +296,31 @@ class AnalysisViewModel(application: Application) : AndroidViewModel(application
         val infos: List<WorkInfo>,
         val processing: AnalysisProcessingCounts?
     )
+}
+
+internal fun filterAndOrderEvidenceComments(
+    rawComments: List<CommentEntity>,
+    importId: String,
+    citedCommentIds: List<String>
+): List<CommentEntity> {
+    val matchingByLocalId = rawComments
+        .filter { it.importId == importId }
+        .associateBy { it.localId }
+    return citedCommentIds.mapNotNull { matchingByLocalId[it] }
+}
+
+internal fun computeConfigReadiness(
+    configVersion: Long?,
+    hasOpenRouter: Boolean,
+    hasTypeSafe: Boolean,
+    hasConsent: Boolean
+): Boolean {
+    if (configVersion == null) return false
+    return if (configVersion >= 3L) {
+        hasOpenRouter && hasConsent
+    } else {
+        hasOpenRouter && hasTypeSafe && hasConsent
+    }
 }
 
 internal fun classifyAnalysisCompletion(
@@ -274,7 +335,7 @@ internal fun classifyAnalysisCompletion(
 }
 
 internal class AnalysisActionController(
-    private val isReady: () -> Boolean,
+    private val isReady: (configVersion: Long) -> Boolean,
     private val enqueue: (String, Long) -> Unit,
     private val onStateChanged: (String, Long, Boolean, AnalysisActionMessage?) -> Unit
 ) {
@@ -283,7 +344,7 @@ internal class AnalysisActionController(
     fun start(importId: String, configVersion: Long): Boolean {
         val scope = importId to configVersion
         if (scope in activeScopes) return false
-        if (!isReady()) {
+        if (!isReady(configVersion)) {
             onStateChanged(importId, configVersion, false, AnalysisActionMessage.NOT_READY)
             return false
         }
