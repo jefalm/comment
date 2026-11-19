@@ -15,14 +15,8 @@ object PinnedReplyFormatter {
     ): PinnedReplyResult {
         val supportingIds = mutableListOf<String>()
 
-        val questions = synthesis.questionsAndRequests.take(2)
-        questions.forEach { supportingIds.addAll(it.citedCommentIds) }
-
         val blindSpots = synthesis.blindSpotsAndCorrections.take(2)
         blindSpots.forEach { supportingIds.addAll(it.citedCommentIds) }
-
-        val followUps = synthesis.recommendedFollowUps.take(1)
-        followUps.forEach { supportingIds.addAll(it.citedCommentIds) }
 
         val lines = mutableListOf<String>()
 
@@ -41,26 +35,10 @@ object PinnedReplyFormatter {
             lines.add("")
         }
 
-        if (questions.isNotEmpty()) {
-            lines.add("Top questions & requested topics:")
-            questions.forEach { q ->
-                lines.add("• ${stripCitationArtifacts(q.questionOrRequest)}")
-            }
-            lines.add("")
-        }
-
         if (blindSpots.isNotEmpty()) {
             lines.add("Clarifications & corrections from the community:")
             blindSpots.forEach { b ->
                 lines.add("• ${stripCitationArtifacts(b.claimOrCorrection)}")
-            }
-            lines.add("")
-        }
-
-        if (followUps.isNotEmpty()) {
-            lines.add("Next steps & what's coming next:")
-            followUps.forEach { f ->
-                lines.add("• ${stripCitationArtifacts(f.action)} (${stripCitationArtifacts(f.rationale)})")
             }
             lines.add("")
         }

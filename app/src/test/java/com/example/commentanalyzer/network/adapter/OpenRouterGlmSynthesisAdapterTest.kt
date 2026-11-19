@@ -160,10 +160,8 @@ class OpenRouterGlmSynthesisAdapterTest {
             "executiveSummary": "Executive summary.",
             "themes": [{"title": "Theme 1", "takeaway": "Takeaway", "representativeCommentId": "unknown-rep-id", "citedCommentIds": ["c-01"]}],
             "debates": [],
-            "questionsAndRequests": [],
             "blindSpotsAndCorrections": [],
-            "insiderPerspectives": [],
-            "recommendedFollowUps": []
+            "insiderPerspectives": []
         }"""
         server.enqueue(response(jsonWithBadRepId))
         val context = SynthesisContext(
@@ -320,10 +318,8 @@ class OpenRouterGlmSynthesisAdapterTest {
             "executiveSummary": "Several users praised the feature [c-01] while others raised concerns [c-02].",
             "themes": [{"title": "Theme (c-01)", "takeaway": "Takeaway referring to c-02 directly.", "representativeCommentId": "c-01", "citedCommentIds": ["c-01", "c-02"]}],
             "debates": [{"topic": "Topic [c-01]", "sideASummary": "Side A [c-01]", "sideBSummary": "Side B [c-02]", "citedCommentIds": ["c-01", "c-02"]}],
-            "questionsAndRequests": [{"questionOrRequest": "Question [c-01]", "citedCommentIds": ["c-01"]}],
             "blindSpotsAndCorrections": [{"claimOrCorrection": "Claim [c-02]", "citedCommentIds": ["c-02"]}],
-            "insiderPerspectives": [{"perspective": "Perspective [c-01]", "citedCommentIds": ["c-01"]}],
-            "recommendedFollowUps": [{"action": "Action [c-01]", "rationale": "Rationale [c-02]", "citedCommentIds": ["c-01"]}]
+            "insiderPerspectives": [{"perspective": "Perspective [c-01]", "citedCommentIds": ["c-01"]}]
         }"""
         server.enqueue(response(jsonWithIdsInProse))
         val context = SynthesisContext(
@@ -352,10 +348,8 @@ class OpenRouterGlmSynthesisAdapterTest {
         assertEquals("Theme", synthesis.themesV3[0].title)
         assertEquals("Takeaway referring to directly.", synthesis.themesV3[0].takeaway)
         assertEquals("Topic", synthesis.debates[0].topic)
-        assertEquals("Question", synthesis.questionsAndRequests[0].questionOrRequest)
         assertEquals("Claim", synthesis.blindSpotsAndCorrections[0].claimOrCorrection)
         assertEquals("Perspective", synthesis.insiderPerspectives[0].perspective)
-        assertEquals("Action", synthesis.recommendedFollowUps[0].action)
 
         // Structured citation/evidence IDs remain intact
         assertEquals(listOf("c-01", "c-02"), synthesis.themesV3[0].citedCommentIds)
@@ -453,10 +447,8 @@ class OpenRouterGlmSynthesisAdapterTest {
             "executiveSummary": "Executive summary of comments.",
             "themes": [{"title": "Theme 1", "takeaway": "Takeaway 1", "representativeCommentId": ${gson.toJson(repId)}, "citedCommentIds": [$citedJson]}],
             "debates": [{"topic": "Topic 1", "sideASummary": "Side A", "sideBSummary": "Side B", "citedCommentIds": [$citedJson]}],
-            "questionsAndRequests": [{"questionOrRequest": "Question 1", "citedCommentIds": [$citedJson]}],
             "blindSpotsAndCorrections": [{"claimOrCorrection": "Claim 1", "citedCommentIds": [$citedJson]}],
-            "insiderPerspectives": [{"perspective": "Perspective 1", "citedCommentIds": [$citedJson]}],
-            "recommendedFollowUps": [{"action": "Action 1", "rationale": "Rationale 1", "citedCommentIds": [$citedJson]}]
+            "insiderPerspectives": [{"perspective": "Perspective 1", "citedCommentIds": [$citedJson]}]
         }"""
     }
 }

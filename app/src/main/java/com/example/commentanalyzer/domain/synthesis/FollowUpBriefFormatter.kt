@@ -34,10 +34,6 @@ object FollowUpBriefFormatter {
             val themeItems = synthesis.themesV3.mapIndexed { index, theme ->
                 val sb = StringBuilder()
                 sb.append("${index + 1}. **${theme.title.trim()}**\n   ${theme.takeaway.trim()}")
-                if (!theme.representativeQuote.isNullOrBlank()) {
-                    val author = theme.representativeAuthor?.takeIf(String::isNotBlank) ?: "Audience voice"
-                    sb.append("\n   > \"${theme.representativeQuote.trim()}\" — $author")
-                }
                 sb.append("\n   *(Supported by ${theme.evidenceCount} comments)*")
                 sb.toString()
             }
@@ -52,15 +48,7 @@ object FollowUpBriefFormatter {
             blocks.add("## Debates\n\n${debateItems.joinToString("\n\n")}")
         }
 
-        // 4. Questions & Requests
-        if (synthesis.questionsAndRequests.isNotEmpty()) {
-            val qItems = synthesis.questionsAndRequests.mapIndexed { index, q ->
-                "${index + 1}. **${q.questionOrRequest.trim()}** *(Supported by ${q.evidenceCount} comments)*"
-            }
-            blocks.add("## Questions & Requests\n\n${qItems.joinToString("\n\n")}")
-        }
-
-        // 5. Blind Spots & Corrections
+        // 4. Blind Spots & Corrections
         if (synthesis.blindSpotsAndCorrections.isNotEmpty()) {
             val bItems = synthesis.blindSpotsAndCorrections.mapIndexed { index, b ->
                 "${index + 1}. **${b.claimOrCorrection.trim()}** *(Supported by ${b.evidenceCount} comments)*"
@@ -68,20 +56,12 @@ object FollowUpBriefFormatter {
             blocks.add("## Blind Spots & Corrections\n\n${bItems.joinToString("\n\n")}")
         }
 
-        // 6. Insider Perspectives
+        // 5. Insider Perspectives
         if (synthesis.insiderPerspectives.isNotEmpty()) {
             val iItems = synthesis.insiderPerspectives.mapIndexed { index, i ->
                 "${index + 1}. **${i.perspective.trim()}** *(Supported by ${i.evidenceCount} comments)*"
             }
             blocks.add("## Insider Perspectives\n\n${iItems.joinToString("\n\n")}")
-        }
-
-        // 7. Recommended Follow-Ups
-        if (synthesis.recommendedFollowUps.isNotEmpty()) {
-            val fItems = synthesis.recommendedFollowUps.mapIndexed { index, f ->
-                "${index + 1}. **Action:** ${f.action.trim()}\n   **Rationale:** ${f.rationale.trim()}\n   *(Supported by ${f.evidenceCount} comments)*"
-            }
-            blocks.add("## Recommended Follow-Ups\n\n${fItems.joinToString("\n\n")}")
         }
 
         return blocks.joinToString("\n\n")

@@ -6,9 +6,7 @@ import com.example.commentanalyzer.data.local.entity.ProcessingState
 import com.example.commentanalyzer.domain.model.SourceType
 import com.example.commentanalyzer.domain.model.SynthesisBlindSpotV3
 import com.example.commentanalyzer.domain.model.SynthesisDebateV3
-import com.example.commentanalyzer.domain.model.SynthesisFollowUpV3
 import com.example.commentanalyzer.domain.model.SynthesisInsiderV3
-import com.example.commentanalyzer.domain.model.SynthesisQuestionV3
 import com.example.commentanalyzer.domain.model.SynthesisResult
 import com.example.commentanalyzer.domain.model.SynthesisThemeV3
 import com.example.commentanalyzer.network.glm.GlmApiService
@@ -200,23 +198,10 @@ class OpenRouterGlmQaAdapterTest {
         val synthesis = SynthesisResult(
             schemaVersion = 3,
             executiveSummary = "Audience highly engaged on camera performance [c-1] and battery life (c-2).",
-            questionsAndRequests = listOf(
-                SynthesisQuestionV3(
-                    questionOrRequest = "Can you test 4K 60fps recording? [c-1]",
-                    citedCommentIds = listOf("c-1")
-                )
-            ),
             blindSpotsAndCorrections = listOf(
                 SynthesisBlindSpotV3(
                     claimOrCorrection = "The phone actually does support wireless charging [c-2].",
                     citedCommentIds = listOf("c-2")
-                )
-            ),
-            recommendedFollowUps = listOf(
-                SynthesisFollowUpV3(
-                    action = "Make a dedicated battery drain test",
-                    rationale = "Many comments asked for side-by-side comparison",
-                    citedCommentIds = listOf("c-3")
                 )
             )
         )
@@ -225,13 +210,11 @@ class OpenRouterGlmQaAdapterTest {
 
         assertFalse(result.text.contains("c-1"))
         assertFalse(result.text.contains("c-2"))
-        assertFalse(result.text.contains("c-3"))
         assertFalse(result.text.contains("["))
         assertFalse(result.text.contains("]"))
         assertTrue(result.text.contains("Phone Review 2026"))
-        assertTrue(result.text.contains("Top questions & requested topics:"))
         assertTrue(result.text.contains("Clarifications & corrections from the community:"))
-        assertEquals(listOf("c-1", "c-2", "c-3"), result.supportingEvidenceCommentIds)
+        assertEquals(listOf("c-2"), result.supportingEvidenceCommentIds)
     }
 
     @Test
@@ -257,12 +240,6 @@ class OpenRouterGlmQaAdapterTest {
                     citedCommentIds = listOf("c-3")
                 )
             ),
-            questionsAndRequests = listOf(
-                SynthesisQuestionV3(
-                    questionOrRequest = "Will there be a long-term review?",
-                    citedCommentIds = listOf("c-4")
-                )
-            ),
             blindSpotsAndCorrections = listOf(
                 SynthesisBlindSpotV3(
                     claimOrCorrection = "The base storage is 256GB, not 128GB.",
@@ -273,13 +250,6 @@ class OpenRouterGlmQaAdapterTest {
                 SynthesisInsiderV3(
                     perspective = "Former technician confirms sensor is unchanged.",
                     citedCommentIds = listOf("c-6")
-                )
-            ),
-            recommendedFollowUps = listOf(
-                SynthesisFollowUpV3(
-                    action = "Publish comparison with flagship competitor",
-                    rationale = "Debated heavily in the community",
-                    citedCommentIds = listOf("c-7")
                 )
             )
         )
@@ -294,10 +264,7 @@ class OpenRouterGlmQaAdapterTest {
         assertTrue(markdown.contains("## Executive Summary"))
         assertTrue(markdown.contains("## Themes"))
         assertTrue(markdown.contains("## Debates"))
-        assertTrue(markdown.contains("## Questions & Requests"))
         assertTrue(markdown.contains("## Blind Spots & Corrections"))
         assertTrue(markdown.contains("## Insider Perspectives"))
-        assertTrue(markdown.contains("## Recommended Follow-Ups"))
-        assertTrue(markdown.contains("> \"The titanium feel is by far the best upgrade.\" — TechFan"))
     }
 }

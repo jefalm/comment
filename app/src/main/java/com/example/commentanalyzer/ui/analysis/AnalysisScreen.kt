@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.commentanalyzer.R
@@ -349,7 +348,7 @@ internal fun AnalysisSummaryContent(
                 )
                 if (isV3 && synthesis != null) {
                     Text(
-                        "Active Debates: ${synthesis.debates.size} · Questions & Requests: ${synthesis.questionsAndRequests.size}",
+                        "Active Debates: ${synthesis.debates.size}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -408,27 +407,6 @@ internal fun AnalysisSummaryContent(
                         Column(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(theme.title, style = MaterialTheme.typography.titleSmall)
                             Text(theme.takeaway, style = MaterialTheme.typography.bodyMedium)
-                            if (!theme.representativeQuote.isNullOrBlank()) {
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                    )
-                                ) {
-                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(
-                                            "“${theme.representativeQuote}”",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontStyle = FontStyle.Italic
-                                        )
-                                        Text(
-                                            "— ${theme.representativeAuthor?.takeIf(String::isNotBlank) ?: "Audience voice"}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-                            }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -509,41 +487,7 @@ internal fun AnalysisSummaryContent(
             }
         }
 
-        // 5. QUESTIONS & REQUESTS
-        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Questions & Requests", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            if (synthesis.questionsAndRequests.isEmpty()) {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Text("No questions or requests recorded.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
-                }
-            } else {
-                synthesis.questionsAndRequests.forEach { q ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(q.questionOrRequest, style = MaterialTheme.typography.bodyMedium)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "Supported by ${q.evidenceCount} evidence comments",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                if (q.citedCommentIds.isNotEmpty()) {
-                                    OutlinedButton(onClick = { onShowEvidence(q.questionOrRequest, q.citedCommentIds) }) {
-                                        Text("View evidence (${q.evidenceCount})")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 6. BLIND SPOTS & CORRECTIONS
+        // 5. BLIND SPOTS & CORRECTIONS
         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Blind Spots & Corrections", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             if (synthesis.blindSpotsAndCorrections.isEmpty()) {
@@ -577,7 +521,7 @@ internal fun AnalysisSummaryContent(
             }
         }
 
-        // 7. INSIDER PERSPECTIVES
+        // 6. INSIDER PERSPECTIVES
         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Insider Perspectives", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             if (synthesis.insiderPerspectives.isEmpty()) {
@@ -602,41 +546,6 @@ internal fun AnalysisSummaryContent(
                                 if (insider.citedCommentIds.isNotEmpty()) {
                                     OutlinedButton(onClick = { onShowEvidence(insider.perspective, insider.citedCommentIds) }) {
                                         Text("View evidence (${insider.evidenceCount})")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 8. RECOMMENDED FOLLOW-UPS
-        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Recommended Follow-Ups", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            if (synthesis.recommendedFollowUps.isEmpty()) {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Text("No follow-up recommendations recorded.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
-                }
-            } else {
-                synthesis.recommendedFollowUps.forEach { followUp ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(followUp.action, style = MaterialTheme.typography.titleSmall)
-                            Text(followUp.rationale, style = MaterialTheme.typography.bodyMedium)
-                            if (followUp.citedCommentIds.isNotEmpty()) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        "Supported by ${followUp.evidenceCount} evidence comments",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    OutlinedButton(onClick = { onShowEvidence(followUp.action, followUp.citedCommentIds) }) {
-                                        Text("View evidence (${followUp.evidenceCount})")
                                     }
                                 }
                             }

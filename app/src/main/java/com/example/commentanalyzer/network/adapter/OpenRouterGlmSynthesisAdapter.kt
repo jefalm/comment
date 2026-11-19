@@ -5,9 +5,7 @@ import com.example.commentanalyzer.domain.analysis.SynthesisDeepAnalyzer
 import com.example.commentanalyzer.domain.model.SynthesisBatchResult
 import com.example.commentanalyzer.domain.model.SynthesisBlindSpotV3
 import com.example.commentanalyzer.domain.model.SynthesisDebateV3
-import com.example.commentanalyzer.domain.model.SynthesisFollowUpV3
 import com.example.commentanalyzer.domain.model.SynthesisInsiderV3
-import com.example.commentanalyzer.domain.model.SynthesisQuestionV3
 import com.example.commentanalyzer.domain.model.SynthesisResult
 import com.example.commentanalyzer.domain.model.SynthesisThemeV3
 import com.example.commentanalyzer.network.dto.glm.GlmJsonSchema
@@ -45,13 +43,11 @@ class OpenRouterGlmSynthesisAdapter(
         val languageInstruction = when (targetLanguage) {
             "pt-BR" -> "Write every human-readable synthesis field (executiveSummary, themes[].title, themes[].takeaway, " +
                 "debates[].topic, debates[].sideASummary, debates[].sideBSummary, " +
-                "questionsAndRequests[].questionOrRequest, blindSpotsAndCorrections[].claimOrCorrection, " +
-                "insiderPerspectives[].perspective, recommendedFollowUps[].action, recommendedFollowUps[].rationale) " +
+                "blindSpotsAndCorrections[].claimOrCorrection, insiderPerspectives[].perspective) " +
                 "in Brazilian Portuguese. Keep JSON keys, IDs, schema values, and machine-readable structure unchanged."
             else -> "Write every human-readable synthesis field (executiveSummary, themes[].title, themes[].takeaway, " +
                 "debates[].topic, debates[].sideASummary, debates[].sideBSummary, " +
-                "questionsAndRequests[].questionOrRequest, blindSpotsAndCorrections[].claimOrCorrection, " +
-                "insiderPerspectives[].perspective, recommendedFollowUps[].action, recommendedFollowUps[].rationale) " +
+                "blindSpotsAndCorrections[].claimOrCorrection, insiderPerspectives[].perspective) " +
                 "in English. Keep JSON keys, IDs, schema values, and machine-readable structure unchanged."
         }
 
@@ -244,22 +240,6 @@ class OpenRouterGlmSynthesisAdapter(
             )
         }
 
-        // Questions & Requests
-        val rawQuestions = obj.get("questionsAndRequests")
-        if (rawQuestions == null || !rawQuestions.isJsonArray) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-        val questions = mutableListOf<SynthesisQuestionV3>()
-        for (el in rawQuestions.asJsonArray) {
-            if (!el.isJsonObject) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val item = el.asJsonObject
-            if (item.keySet() != QUESTION_KEYS) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val q = item.get("questionOrRequest").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val cited = parseCitedIds(item.get("citedCommentIds"), evidenceIds) ?: return ValidationResult(error = "GLM_UNKNOWN_EVIDENCE_ID")
-            questions += SynthesisQuestionV3(
-                questionOrRequest = sanitizeProse(q, evidenceIds),
-                citedCommentIds = cited
-            )
-        }
-
         // Blind Spots & Corrections
         val rawBlindSpots = obj.get("blindSpotsAndCorrections")
         if (rawBlindSpots == null || !rawBlindSpots.isJsonArray) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
@@ -292,33 +272,13 @@ class OpenRouterGlmSynthesisAdapter(
             )
         }
 
-        // Recommended Follow-Ups
-        val rawFollowUps = obj.get("recommendedFollowUps")
-        if (rawFollowUps == null || !rawFollowUps.isJsonArray) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-        val followUps = mutableListOf<SynthesisFollowUpV3>()
-        for (el in rawFollowUps.asJsonArray) {
-            if (!el.isJsonObject) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val item = el.asJsonObject
-            if (item.keySet() != FOLLOW_UP_KEYS) return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val action = item.get("action").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val rationale = item.get("rationale").stringValue() ?: return ValidationResult(error = "GLM_SCHEMA_MISMATCH")
-            val cited = parseCitedIds(item.get("citedCommentIds"), evidenceIds) ?: return ValidationResult(error = "GLM_UNKNOWN_EVIDENCE_ID")
-            followUps += SynthesisFollowUpV3(
-                action = sanitizeProse(action, evidenceIds),
-                rationale = sanitizeProse(rationale, evidenceIds),
-                citedCommentIds = cited
-            )
-        }
-
         val synthesisResult = SynthesisResult(
             schemaVersion = SCHEMA_VERSION,
             executiveSummary = sanitizeProse(execSummary, evidenceIds),
             themesV3 = themes,
             debates = debates,
-            questionsAndRequests = questions,
             blindSpotsAndCorrections = blindSpots,
-            insiderPerspectives = insiders,
-            recommendedFollowUps = followUps
+            insiderPerspectives = insiders
         )
         return ValidationResult(synthesis = synthesisResult)
     }
@@ -400,17 +360,13 @@ class OpenRouterGlmSynthesisAdapter(
             "executiveSummary",
             "themes",
             "debates",
-            "questionsAndRequests",
             "blindSpotsAndCorrections",
-            "insiderPerspectives",
-            "recommendedFollowUps"
+            "insiderPerspectives"
         )
         private val THEME_KEYS = setOf("title", "takeaway", "representativeCommentId", "citedCommentIds")
         private val DEBATE_KEYS = setOf("topic", "sideASummary", "sideBSummary", "citedCommentIds")
-        private val QUESTION_KEYS = setOf("questionOrRequest", "citedCommentIds")
         private val BLIND_SPOT_KEYS = setOf("claimOrCorrection", "citedCommentIds")
         private val INSIDER_KEYS = setOf("perspective", "citedCommentIds")
-        private val FOLLOW_UP_KEYS = setOf("action", "rationale", "citedCommentIds")
 
         private val responseSchema: Map<String, Any> = mapOf(
             "type" to "object",
@@ -447,18 +403,6 @@ class OpenRouterGlmSynthesisAdapter(
                         )
                     )
                 ),
-                "questionsAndRequests" to mapOf(
-                    "type" to "array",
-                    "items" to mapOf(
-                        "type" to "object",
-                        "additionalProperties" to false,
-                        "required" to QUESTION_KEYS.toList(),
-                        "properties" to mapOf(
-                            "questionOrRequest" to mapOf("type" to "string", "minLength" to 1),
-                            "citedCommentIds" to mapOf("type" to "array", "items" to mapOf("type" to "string", "minLength" to 1))
-                        )
-                    )
-                ),
                 "blindSpotsAndCorrections" to mapOf(
                     "type" to "array",
                     "items" to mapOf(
@@ -479,19 +423,6 @@ class OpenRouterGlmSynthesisAdapter(
                         "required" to INSIDER_KEYS.toList(),
                         "properties" to mapOf(
                             "perspective" to mapOf("type" to "string", "minLength" to 1),
-                            "citedCommentIds" to mapOf("type" to "array", "items" to mapOf("type" to "string", "minLength" to 1))
-                        )
-                    )
-                ),
-                "recommendedFollowUps" to mapOf(
-                    "type" to "array",
-                    "items" to mapOf(
-                        "type" to "object",
-                        "additionalProperties" to false,
-                        "required" to FOLLOW_UP_KEYS.toList(),
-                        "properties" to mapOf(
-                            "action" to mapOf("type" to "string", "minLength" to 1),
-                            "rationale" to mapOf("type" to "string", "minLength" to 1),
                             "citedCommentIds" to mapOf("type" to "array", "items" to mapOf("type" to "string", "minLength" to 1))
                         )
                     )

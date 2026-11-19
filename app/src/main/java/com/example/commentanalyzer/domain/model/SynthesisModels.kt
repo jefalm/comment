@@ -44,13 +44,6 @@ data class SynthesisDebateV3(
     val evidenceCount: Int get() = citedCommentIds.distinct().size
 }
 
-data class SynthesisQuestionV3(
-    val questionOrRequest: String,
-    val citedCommentIds: List<String>
-) {
-    val evidenceCount: Int get() = citedCommentIds.distinct().size
-}
-
 data class SynthesisBlindSpotV3(
     val claimOrCorrection: String,
     val citedCommentIds: List<String>
@@ -65,14 +58,6 @@ data class SynthesisInsiderV3(
     val evidenceCount: Int get() = citedCommentIds.distinct().size
 }
 
-data class SynthesisFollowUpV3(
-    val action: String,
-    val rationale: String,
-    val citedCommentIds: List<String>
-) {
-    val evidenceCount: Int get() = citedCommentIds.distinct().size
-}
-
 data class SynthesisResult(
     val schemaVersion: Int,
     val executiveSummary: String,
@@ -82,19 +67,15 @@ data class SynthesisResult(
     val notableInsights: List<SynthesisNotableInsight> = emptyList(),
     val themesV3: List<SynthesisThemeV3> = emptyList(),
     val debates: List<SynthesisDebateV3> = emptyList(),
-    val questionsAndRequests: List<SynthesisQuestionV3> = emptyList(),
     val blindSpotsAndCorrections: List<SynthesisBlindSpotV3> = emptyList(),
-    val insiderPerspectives: List<SynthesisInsiderV3> = emptyList(),
-    val recommendedFollowUps: List<SynthesisFollowUpV3> = emptyList()
+    val insiderPerspectives: List<SynthesisInsiderV3> = emptyList()
 ) {
     fun allCitedCommentIds(): Set<String> {
         val ids = mutableSetOf<String>()
         themesV3.forEach { ids.addAll(it.citedCommentIds) }
         debates.forEach { ids.addAll(it.citedCommentIds) }
-        questionsAndRequests.forEach { ids.addAll(it.citedCommentIds) }
         blindSpotsAndCorrections.forEach { ids.addAll(it.citedCommentIds) }
         insiderPerspectives.forEach { ids.addAll(it.citedCommentIds) }
-        recommendedFollowUps.forEach { ids.addAll(it.citedCommentIds) }
         themes.forEach { ids.addAll(it.citedCommentIds) }
         agreements.forEach { ids.addAll(it.citedCommentIds) }
         contrastingPerspectives.forEach { ids.addAll(it.citedCommentIds) }

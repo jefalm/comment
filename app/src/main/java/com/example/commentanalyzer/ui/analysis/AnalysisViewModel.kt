@@ -70,13 +70,11 @@ data class AnalysisUiState(
             synth.debates.firstOrNull()?.let {
                 list.add("What are viewers debating about ${it.topic}?")
             }
-            synth.questionsAndRequests.take(2).forEach {
-                list.add(it.questionOrRequest)
+            synth.blindSpotsAndCorrections.firstOrNull()?.let {
+                list.add("What corrections or misconceptions were raised?")
             }
-            if (list.size < 3) {
-                synth.blindSpotsAndCorrections.firstOrNull()?.let {
-                    list.add("What corrections or misconceptions were raised?")
-                }
+            synth.themesV3.firstOrNull()?.let {
+                list.add("Can you elaborate more on ${it.title}?")
             }
             return list.take(3)
         }
