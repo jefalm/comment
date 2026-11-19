@@ -66,6 +66,19 @@ interface CommentDao {
 
     @Query(
         """
+        SELECT EXISTS (
+            SELECT 1 FROM comments
+            WHERE importId = :importId
+                AND processingConfigVersion = :configVersion
+                AND processingState = 'IMPORTED'
+                AND currentStage = 'INGESTION'
+        )
+        """
+    )
+    suspend fun hasImportedCommentsForAnalysis(importId: String, configVersion: Long): Boolean
+
+    @Query(
+        """
         SELECT * FROM comments
         WHERE importId = :importId
             AND processingConfigVersion = :configVersion

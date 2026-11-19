@@ -46,8 +46,10 @@ object EvidencePlanner {
         val eligible = comments.filter { isWithinItemBounds(it, MAX_EVIDENCE_BYTES, MAX_EVIDENCE_TOKENS) }
         if (eligible.isEmpty()) return emptyList()
 
+        val stats = FeatureExtractor.prepareCorpusStats(eligible)
+
         val scored = eligible.map { comment ->
-            val features = FeatureExtractor.extract(comment, eligible, comment.nearDuplicateClusterSize)
+            val features = FeatureExtractor.extract(comment, stats, comment.nearDuplicateClusterSize)
             val score = comment.signalScore ?: SignalRanker.forVersion(
                 comment.rankerVersion ?: SignalRanker.DEFAULT_VERSION
             ).score(features).score
@@ -187,25 +189,21 @@ object EvidencePlanner {
         }
 
         // Maintain thread context: if a reply is selected and its root is in eligible, include root if space allows
-        val rootLookup = eligible.filter { it.sourceCommentId != null && it.parentSourceCommentId == null }
-            .associateBy { it.sourceCommentId }
-        val toAddRoots = mutableListOf<CommentEntity>()
+        val rootCandidateLookup = scored.filter { it.comment.sourceCommentId != null && it.comment.parentSourceCommentId == null }
+            .associateBy { it.comment.sourceCommentId }
+        val toAddRoots = mutableListOf<ScoredCandidate>()
         for (selected in selectedMap.values) {
             val parentSourceId = selected.comment.parentSourceCommentId
             if (parentSourceId != null) {
-                val root = rootLookup[parentSourceId]
-                if (root != null && !selectedMap.containsKey(root.localId)) {
-                    toAddRoots.add(root)
+                val rootCandidate = rootCandidateLookup[parentSourceId]
+                if (rootCandidate != null && !selectedMap.containsKey(rootCandidate.comment.localId)) {
+                    toAddRoots.add(rootCandidate)
                 }
             }
         }
-        for (root in toAddRoots) {
+        for (rootCandidate in toAddRoots) {
             if (selectedMap.size >= MAX_EVIDENCE_ITEMS) break
-            val features = FeatureExtractor.extract(root, eligible, root.nearDuplicateClusterSize)
-            val score = root.signalScore ?: SignalRanker.forVersion(
-                root.rankerVersion ?: SignalRanker.DEFAULT_VERSION
-            ).score(features).score
-            selectedMap[root.localId] = ScoredCandidate(root, features, score)
+            selectedMap[rootCandidate.comment.localId] = rootCandidate
         }
 
         // Order deterministically: thread root before replies, then by score
@@ -252,6 +250,8 @@ object EvidencePlanner {
             .sortedBy { it.localId }
         if (eligible.isEmpty()) return emptyList()
 
+        val stats = FeatureExtractor.prepareCorpusStats(eligible)
+
         val selectedSet = LinkedHashSet<CommentEntity>()
         val perCategoryLimit = 50
 
@@ -273,10 +273,10 @@ object EvidencePlanner {
         ).take(perCategoryLimit)
         selectedSet.addAll(questions)
 
-        // 4. Rare-vocabulary / low-like comments using FeatureExtractor.extract(comment, comments).rareTokenScore
+        // 4. Rare-vocabulary / low-like comments using FeatureExtractor.extract(comment, stats).rareTokenScore
         val lowEngagement = eligible.filter { (it.likeCount ?: 0) <= 2 }
         val rareLowEngagement = lowEngagement.map { comment ->
-            val features = FeatureExtractor.extract(comment, comments, comment.nearDuplicateClusterSize)
+            val features = FeatureExtractor.extract(comment, stats, comment.nearDuplicateClusterSize)
             comment to features.rareTokenScore
         }.sortedWith(
             compareByDescending<Pair<CommentEntity, Double>> { it.second }

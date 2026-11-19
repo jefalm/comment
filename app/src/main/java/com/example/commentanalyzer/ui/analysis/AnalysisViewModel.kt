@@ -190,7 +190,7 @@ class AnalysisViewModel(application: Application) : AndroidViewModel(application
                     val importId = selection.importId
                     val configVersion = selection.configVersion
                     if (importId == null || configVersion == null) {
-                        flowOf(WorkObservation(emptyList(), null))
+                        flowOf(WorkObservation(emptyList(), null, false))
                     } else {
                         combine(
                             workManager.getWorkInfosForUniqueWorkFlow(
@@ -198,7 +198,11 @@ class AnalysisViewModel(application: Application) : AndroidViewModel(application
                             ),
                             repository.observeSummary(importId, configVersion)
                         ) { infos, summary ->
-                            WorkObservation(infos, summary.processing)
+                            WorkObservation(
+                                infos = infos,
+                                processing = summary.processing,
+                                hasSynthesis = summary.synthesis != null
+                            )
                         }
                     }
                 }
@@ -218,7 +222,8 @@ class AnalysisViewModel(application: Application) : AndroidViewModel(application
                             WorkInfo.State.SUCCEEDED -> if (
                                 observation.processing == null
                             ) null else classifyAnalysisCompletion(
-                                requireNotNull(observation.processing)
+                                requireNotNull(observation.processing),
+                                hasSynthesis = observation.hasSynthesis
                             )
                             WorkInfo.State.FAILED -> if (
                                 latest.outputData.getString(AnalysisWorker.KEY_ERROR) ==
@@ -428,7 +433,8 @@ class AnalysisViewModel(application: Application) : AndroidViewModel(application
 
     private data class WorkObservation(
         val infos: List<WorkInfo>,
-        val processing: AnalysisProcessingCounts?
+        val processing: AnalysisProcessingCounts?,
+        val hasSynthesis: Boolean
     )
 }
 
@@ -458,11 +464,13 @@ internal fun computeConfigReadiness(
 }
 
 internal fun classifyAnalysisCompletion(
-    processing: AnalysisProcessingCounts
+    processing: AnalysisProcessingCounts,
+    hasSynthesis: Boolean
 ): AnalysisActionMessage? = when {
     processing.completed > 0 && processing.permanentlyFailed > 0 ->
-        AnalysisActionMessage.PARTIAL
-    processing.completed > 0 -> AnalysisActionMessage.SUCCEEDED
+        if (hasSynthesis) AnalysisActionMessage.PARTIAL else AnalysisActionMessage.ANALYSIS_FAILED
+    processing.completed > 0 && hasSynthesis -> AnalysisActionMessage.SUCCEEDED
+    processing.completed > 0 && !hasSynthesis -> AnalysisActionMessage.ANALYSIS_FAILED
     processing.permanentlyFailed > 0 -> AnalysisActionMessage.ANALYSIS_FAILED
     processing.retrying > 0 || processing.inProgress > 0 -> null
     else -> AnalysisActionMessage.NO_ELIGIBLE_COMMENTS

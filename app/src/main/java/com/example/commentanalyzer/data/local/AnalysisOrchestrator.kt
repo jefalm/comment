@@ -104,9 +104,10 @@ class AnalysisOrchestrator(
             val clusterSizes = batchFilterResults.mapValues { it.value.nearDuplicateClusterSize }
 
             val ranker = com.example.commentanalyzer.domain.ranking.SignalRanker.forVersion(effectiveConfig.signalRankerVersion)
+            val corpusStats = com.example.commentanalyzer.domain.ranking.FeatureExtractor.prepareCorpusStats(imported)
             val rankerResults = imported.associate { comment ->
                 val cSize = clusterSizes[comment.localId] ?: 1
-                val features = com.example.commentanalyzer.domain.ranking.FeatureExtractor.extract(comment, imported, cSize)
+                val features = com.example.commentanalyzer.domain.ranking.FeatureExtractor.extract(comment, corpusStats, cSize)
                 comment.localId to ranker.score(features)
             }
 

@@ -65,6 +65,7 @@ class CommentAnalyzerWorker(
                 .build()
             val work = OneTimeWorkRequestBuilder<CommentAnalyzerWorker>()
                 .setInputData(input)
+                .setConstraints(NETWORK_CONNECTED_CONSTRAINTS)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(

@@ -53,12 +53,13 @@ object TelemetryExporter {
         }
         csvBuilder.append("\n")
 
+        val corpusStats = FeatureExtractor.prepareCorpusStats(comments)
         for (comment in comments) {
             val importIdHash = sha256(comment.importId)
             val runIdHash = sha256("run:${comment.importId}:${comment.processingConfigVersion}")
             val commentIdHash = sha256(comment.localId)
 
-            val features = FeatureExtractor.extract(comment, comments, comment.nearDuplicateClusterSize)
+            val features = FeatureExtractor.extract(comment, corpusStats, comment.nearDuplicateClusterSize)
             val wasLocallyRejected = comment.processingState == com.example.commentanalyzer.data.local.entity.ProcessingState.LOCAL_REJECTED
             val wasJevAccepted = comment.processingState == com.example.commentanalyzer.data.local.entity.ProcessingState.COMPLETED
             val jevProbability = comment.relevanceScore ?: 0.0

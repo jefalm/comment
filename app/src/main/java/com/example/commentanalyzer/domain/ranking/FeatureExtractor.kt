@@ -35,6 +35,12 @@ data class ExtractedFeatures(
     )
 }
 
+data class CorpusStats(
+    val nImport: Double,
+    val docFreqs: Map<String, Int>,
+    val replyCounts: Map<String, Int>
+)
+
 object FeatureExtractor {
     private val TIMESTAMP_REGEX = Regex("""\b\d{1,2}:\d{2}(?::\d{2})?\b""")
     private val PERCENTAGE_REGEX = Regex("""\b\d+(?:\.\d+)?%""")
@@ -43,17 +49,34 @@ object FeatureExtractor {
         """(?i)\b(however|actually|wrong|disagree|but|porém|discordo|na verdade)\b"""
     )
     private val WORD_TOKEN_REGEX = Regex("""\b\w+\b""")
+    private val SENTENCE_SPLIT_REGEX = Regex("""[.!?]+""")
+
+    fun prepareCorpusStats(comments: List<CommentEntity>): CorpusStats {
+        val nImport = comments.size.toDouble().coerceAtLeast(1.0)
+        val docFreqs = HashMap<String, Int>()
+        val replyCounts = HashMap<String, Int>()
+        for (c in comments) {
+            c.parentSourceCommentId?.let { parentId ->
+                replyCounts[parentId] = (replyCounts[parentId] ?: 0) + 1
+            }
+            val words = WORD_TOKEN_REGEX.findAll(c.originalText.lowercase()).map { it.value }.toSet()
+            for (w in words) {
+                docFreqs[w] = (docFreqs[w] ?: 0) + 1
+            }
+        }
+        return CorpusStats(nImport, docFreqs, replyCounts)
+    }
 
     fun extract(
         comment: CommentEntity,
-        allCommentsInImport: List<CommentEntity>,
+        stats: CorpusStats,
         nearDuplicateClusterSize: Int = 1
     ): ExtractedFeatures {
         val text = comment.originalText
         val words = WORD_TOKEN_REGEX.findAll(text.lowercase()).map { it.value }.toList()
         val wordCountVal = words.size.toDouble()
         val charCountVal = text.length.toDouble()
-        val sentenceCountVal = text.split(Regex("""[.!?]+""")).filter { it.isNotBlank() }.size.coerceAtLeast(1).toDouble()
+        val sentenceCountVal = text.split(SENTENCE_SPLIT_REGEX).filter { it.isNotBlank() }.size.coerceAtLeast(1).toDouble()
         val questionMarkCountVal = text.count { it == '?' }.toDouble()
 
         val logLikesVal = ln(1.0 + (comment.likeCount ?: 0))
@@ -66,7 +89,7 @@ object FeatureExtractor {
         val hasDiscourseMarkerVal = if (DISCOURSE_MARKER_REGEX.containsMatchIn(text)) 1.0 else 0.0
 
         val threadSizeVal = if (comment.sourceCommentId != null) {
-            1.0 + allCommentsInImport.count { it.parentSourceCommentId == comment.sourceCommentId }
+            1.0 + (stats.replyCounts[comment.sourceCommentId] ?: 0)
         } else {
             1.0
         }
@@ -74,17 +97,10 @@ object FeatureExtractor {
         val uniqueWords = words.toSet()
         val uniqueTokenRatioVal = if (words.isNotEmpty()) uniqueWords.size.toDouble() / words.size else 0.0
 
-        val nImport = allCommentsInImport.size.toDouble().coerceAtLeast(1.0)
-        val docFreqs = mutableMapOf<String, Int>()
-        for (w in uniqueWords) {
-            docFreqs[w] = allCommentsInImport.count { c ->
-                c.originalText.lowercase().contains(w)
-            }
-        }
         val rareTokenScoreVal = if (uniqueWords.isNotEmpty()) {
             val totalIdf = uniqueWords.sumOf { w ->
-                val df = docFreqs[w] ?: 1
-                ln((nImport + 1.0) / (df + 1.0))
+                val df = stats.docFreqs[w] ?: 1
+                ln((stats.nImport + 1.0) / (df + 1.0))
             }
             (totalIdf / uniqueWords.size).coerceIn(0.0, 10.0) / 10.0
         } else {
@@ -109,4 +125,13 @@ object FeatureExtractor {
             uniqueTokenRatio = uniqueTokenRatioVal
         )
     }
+
+    fun extract(
+        comment: CommentEntity,
+        allCommentsInImport: List<CommentEntity>,
+        nearDuplicateClusterSize: Int = 1
+    ): ExtractedFeatures {
+        return extract(comment, prepareCorpusStats(allCommentsInImport), nearDuplicateClusterSize)
+    }
 }
+

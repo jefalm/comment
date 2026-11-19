@@ -176,6 +176,54 @@ class CommentDaoPagingTest {
         return (result as PagingSource.LoadResult.Page).data
     }
 
+    @Test
+    fun hasImportedCommentsForAnalysisRespectsScopeStateAndStage() = runBlocking {
+        val targetImport = "import-target"
+        val otherImport = "import-other"
+        val configVersion = 3L
+
+        org.junit.Assert.assertFalse(dao.hasImportedCommentsForAnalysis(targetImport, configVersion))
+
+        // 1. Matching row -> true
+        val matching = comment("c-match", targetImport, "Text 1", 100L).copy(
+            processingConfigVersion = configVersion,
+            processingState = ProcessingState.IMPORTED,
+            currentStage = ProcessingStage.INGESTION
+        )
+        dao.insertComment(matching)
+        assertTrue(dao.hasImportedCommentsForAnalysis(targetImport, configVersion))
+
+        // Remove the matching row so it no longer matches
+        dao.insertComment(matching.copy(processingState = ProcessingState.COMPLETED))
+        org.junit.Assert.assertFalse(dao.hasImportedCommentsForAnalysis(targetImport, configVersion))
+
+        // Insert distinct non-matching rows
+        val wrongImport = comment("c-wrong-import", otherImport, "Text", 101L).copy(
+            processingConfigVersion = configVersion,
+            processingState = ProcessingState.IMPORTED,
+            currentStage = ProcessingStage.INGESTION
+        )
+        val wrongConfig = comment("c-wrong-config", targetImport, "Text", 102L).copy(
+            processingConfigVersion = configVersion + 1,
+            processingState = ProcessingState.IMPORTED,
+            currentStage = ProcessingStage.INGESTION
+        )
+        val wrongState = comment("c-wrong-state", targetImport, "Text", 103L).copy(
+            processingConfigVersion = configVersion,
+            processingState = ProcessingState.READY_GLM,
+            currentStage = ProcessingStage.INGESTION
+        )
+        val wrongStage = comment("c-wrong-stage", targetImport, "Text", 104L).copy(
+            processingConfigVersion = configVersion,
+            processingState = ProcessingState.IMPORTED,
+            currentStage = ProcessingStage.DONE
+        )
+        dao.insertComments(listOf(wrongImport, wrongConfig, wrongState, wrongStage))
+
+        // Original target scope must still be false despite other rows existing
+        org.junit.Assert.assertFalse(dao.hasImportedCommentsForAnalysis(targetImport, configVersion))
+    }
+
     private fun comment(
         id: String,
         importId: String,

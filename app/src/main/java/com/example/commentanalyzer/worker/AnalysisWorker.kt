@@ -2,17 +2,22 @@ package com.example.commentanalyzer.worker
 
 import android.content.Context
 import androidx.work.BackoffPolicy
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.example.commentanalyzer.AnalysisAppContainer
 import com.example.commentanalyzer.CommentAnalyzerApplication
-import com.example.commentanalyzer.data.local.AnalysisRunResult
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+
+val NETWORK_CONNECTED_CONSTRAINTS: Constraints = Constraints.Builder()
+    .setRequiredNetworkType(NetworkType.CONNECTED)
+    .build()
 
 class AnalysisWorker(
     appContext: Context,
@@ -40,7 +45,7 @@ class AnalysisWorker(
         if (result.remoteProcessingBlocked) {
             return Result.failure(Data.Builder().putString(KEY_ERROR, ERROR_NOT_READY).build())
         }
-        if (shouldContinueAfterLocalProcessing(result)) {
+        if (app.database.commentDao().hasImportedCommentsForAnalysis(importId, configVersion)) {
             enqueueContinuation(applicationContext, importId, configVersion)
             return Result.success(
                 Data.Builder()
@@ -101,6 +106,7 @@ class AnalysisWorker(
                         .putLong(KEY_CONFIG_VERSION, configVersion)
                         .build()
                 )
+                .setConstraints(NETWORK_CONNECTED_CONSTRAINTS)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
@@ -118,6 +124,7 @@ class AnalysisWorker(
                         .putLong(KEY_CONFIG_VERSION, configVersion)
                         .build()
                 )
+                .setConstraints(NETWORK_CONNECTED_CONSTRAINTS)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
@@ -128,7 +135,3 @@ class AnalysisWorker(
         }
     }
 }
-
-internal fun shouldContinueAfterLocalProcessing(
-    result: AnalysisRunResult
-): Boolean = result.locallyProcessedComments > 0

@@ -13,19 +13,31 @@ class AnalysisActionControllerTest {
     fun persistedCompletionCountsDistinguishSuccessPartialFailureAndNoEligibleWork() {
         assertEquals(
             AnalysisActionMessage.SUCCEEDED,
-            classifyAnalysisCompletion(processing(completed = 4))
-        )
-        assertEquals(
-            AnalysisActionMessage.PARTIAL,
-            classifyAnalysisCompletion(processing(completed = 2, failed = 1))
+            classifyAnalysisCompletion(processing(completed = 4), hasSynthesis = true)
         )
         assertEquals(
             AnalysisActionMessage.ANALYSIS_FAILED,
-            classifyAnalysisCompletion(processing(failed = 3))
+            classifyAnalysisCompletion(processing(completed = 4), hasSynthesis = false)
+        )
+        assertEquals(
+            AnalysisActionMessage.PARTIAL,
+            classifyAnalysisCompletion(processing(completed = 2, failed = 1), hasSynthesis = true)
+        )
+        assertEquals(
+            AnalysisActionMessage.ANALYSIS_FAILED,
+            classifyAnalysisCompletion(processing(completed = 2, failed = 1), hasSynthesis = false)
+        )
+        assertEquals(
+            AnalysisActionMessage.ANALYSIS_FAILED,
+            classifyAnalysisCompletion(processing(failed = 3), hasSynthesis = false)
+        )
+        assertEquals(
+            AnalysisActionMessage.ANALYSIS_FAILED,
+            classifyAnalysisCompletion(processing(failed = 3), hasSynthesis = true)
         )
         assertEquals(
             AnalysisActionMessage.NO_ELIGIBLE_COMMENTS,
-            classifyAnalysisCompletion(processing(total = 5, locallyRejected = 5))
+            classifyAnalysisCompletion(processing(total = 5, locallyRejected = 5), hasSynthesis = false)
         )
     }
 
@@ -33,7 +45,11 @@ class AnalysisActionControllerTest {
     fun pendingPersistedWorkDoesNotReportCompletion() {
         assertEquals(
             null,
-            classifyAnalysisCompletion(processing(retrying = 1))
+            classifyAnalysisCompletion(processing(retrying = 1), hasSynthesis = true)
+        )
+        assertEquals(
+            null,
+            classifyAnalysisCompletion(processing(inProgress = 1), hasSynthesis = false)
         )
     }
 
