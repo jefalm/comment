@@ -51,6 +51,47 @@ class FeatureExtractorTest {
         assertEquals(run1, run2)
     }
 
+    @Test
+    fun corpusStatsAccumulationIsOrderIndependentAndMatchesBatchPreparation() {
+        val comments = (1..300).map { i ->
+            createComment(
+                id = "c-$i",
+                text = "comment $i rare${i % 17} shared",
+                parentSourceCommentId = if (i % 4 == 0) "src-c-1" else null
+            )
+        }
+
+        val singleShot = FeatureExtractor.prepareCorpusStats(comments)
+
+        val shuffledAccumulator = CorpusStatsAccumulator()
+        comments.reversed().forEach { shuffledAccumulator.add(it.originalText, it.parentSourceCommentId) }
+        val accumulated = shuffledAccumulator.build()
+
+        assertEquals(singleShot, accumulated)
+        assertEquals(300.0, accumulated.nImport, 1e-9)
+    }
+
+    @Test
+    fun corpusStatsAccumulatedInBoundedPagesMatchWholeImportStats() {
+        val comments = (1..300).map { i ->
+            createComment(id = "c-$i", text = "comment $i rare${i % 17} shared")
+        }
+
+        val wholeImport = FeatureExtractor.prepareCorpusStats(comments)
+
+        val pagedAccumulator = CorpusStatsAccumulator()
+        comments.chunked(250).forEach { page ->
+            page.forEach { pagedAccumulator.add(it.originalText, it.parentSourceCommentId) }
+        }
+        val paged = pagedAccumulator.build()
+
+        assertEquals(wholeImport, paged)
+        assertEquals(
+            FeatureExtractor.extract(comments.first(), wholeImport),
+            FeatureExtractor.extract(comments.first(), paged)
+        )
+    }
+
     private fun createComment(
         id: String,
         text: String = "sample text",

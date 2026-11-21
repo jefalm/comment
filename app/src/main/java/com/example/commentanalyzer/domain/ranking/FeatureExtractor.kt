@@ -52,20 +52,15 @@ object FeatureExtractor {
     private val SENTENCE_SPLIT_REGEX = Regex("""[.!?]+""")
 
     fun prepareCorpusStats(comments: List<CommentEntity>): CorpusStats {
-        val nImport = comments.size.toDouble().coerceAtLeast(1.0)
-        val docFreqs = HashMap<String, Int>()
-        val replyCounts = HashMap<String, Int>()
+        val accumulator = CorpusStatsAccumulator()
         for (c in comments) {
-            c.parentSourceCommentId?.let { parentId ->
-                replyCounts[parentId] = (replyCounts[parentId] ?: 0) + 1
-            }
-            val words = WORD_TOKEN_REGEX.findAll(c.originalText.lowercase()).map { it.value }.toSet()
-            for (w in words) {
-                docFreqs[w] = (docFreqs[w] ?: 0) + 1
-            }
+            accumulator.add(c.originalText, c.parentSourceCommentId)
         }
-        return CorpusStats(nImport, docFreqs, replyCounts)
+        return accumulator.build()
     }
+
+    internal fun distinctWords(originalText: String): Set<String> =
+        WORD_TOKEN_REGEX.findAll(originalText.lowercase()).mapTo(HashSet()) { it.value }
 
     fun extract(
         comment: CommentEntity,
@@ -133,5 +128,32 @@ object FeatureExtractor {
     ): ExtractedFeatures {
         return extract(comment, prepareCorpusStats(allCommentsInImport), nearDuplicateClusterSize)
     }
+}
+
+/**
+ * Accumulates import-wide corpus statistics one document at a time so that the expensive comment
+ * evaluation can keep running in bounded batches while the scoring inputs stay import-wide.
+ * The accumulated state depends only on the multiset of source documents, never on their order.
+ */
+class CorpusStatsAccumulator {
+    private var documentCount = 0
+    private val docFreqs = HashMap<String, Int>()
+    private val replyCounts = HashMap<String, Int>()
+
+    fun add(originalText: String, parentSourceCommentId: String?) {
+        documentCount++
+        if (parentSourceCommentId != null) {
+            replyCounts[parentSourceCommentId] = (replyCounts[parentSourceCommentId] ?: 0) + 1
+        }
+        for (word in FeatureExtractor.distinctWords(originalText)) {
+            docFreqs[word] = (docFreqs[word] ?: 0) + 1
+        }
+    }
+
+    fun build(): CorpusStats = CorpusStats(
+        nImport = documentCount.toDouble().coerceAtLeast(1.0),
+        docFreqs = docFreqs.toMap(),
+        replyCounts = replyCounts.toMap()
+    )
 }
 

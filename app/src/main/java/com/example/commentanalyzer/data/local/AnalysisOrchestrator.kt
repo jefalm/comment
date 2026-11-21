@@ -12,6 +12,10 @@ import com.example.commentanalyzer.domain.analysis.DeepAnalyzer
 import com.example.commentanalyzer.domain.batching.BatchPlanner
 import com.example.commentanalyzer.domain.batching.BatchLimits
 import com.example.commentanalyzer.domain.filter.LocalFilter
+import com.example.commentanalyzer.domain.filter.sourceStableKey
+import com.example.commentanalyzer.domain.ranking.CorpusStats
+import com.example.commentanalyzer.domain.ranking.CorpusStatsAccumulator
+import com.example.commentanalyzer.domain.ranking.FeatureExtractor
 import com.example.commentanalyzer.domain.gate.SemanticGate
 import com.example.commentanalyzer.domain.model.AnalysisConfig
 import com.example.commentanalyzer.domain.model.AnalysisInput
@@ -83,6 +87,16 @@ class AnalysisOrchestrator(
         val startRunTime = clock()
         var processedThisRun = 0
 
+        // Import-wide, source-stable preprocessing. Runs at most once per invocation and only
+        // over a lightweight column projection, so expensive comment evaluation stays bounded.
+        val importLocalContext = if (
+            database.commentDao().hasImportedCommentsForAnalysis(importId, effectiveConfig.configVersion)
+        ) {
+            prepareImportWideLocalContext(importId, effectiveConfig.configVersion)
+        } else {
+            null
+        }
+
         while (processedThisRun < MAX_COMMENTS_PER_RUN) {
             val limit = minOf(
                 LOCAL_PROCESSING_CHUNK_SIZE,
@@ -99,15 +113,16 @@ class AnalysisOrchestrator(
             }
 
             telemetryRecorder?.recordEvent(TelemetryEvent.Discovered(imported.size))
-            val batchFilterResults = LocalFilter.evaluateBatch(imported)
+            val localContext = requireNotNull(importLocalContext)
+            val batchFilterResults = LocalFilter.evaluateBatch(imported, localContext.duplicateGroups)
             val evaluations = batchFilterResults.mapValues { it.value.filterResult }
             val clusterSizes = batchFilterResults.mapValues { it.value.nearDuplicateClusterSize }
 
             val ranker = com.example.commentanalyzer.domain.ranking.SignalRanker.forVersion(effectiveConfig.signalRankerVersion)
-            val corpusStats = com.example.commentanalyzer.domain.ranking.FeatureExtractor.prepareCorpusStats(imported)
+            val corpusStats = localContext.corpusStats
             val rankerResults = imported.associate { comment ->
                 val cSize = clusterSizes[comment.localId] ?: 1
-                val features = com.example.commentanalyzer.domain.ranking.FeatureExtractor.extract(comment, corpusStats, cSize)
+                val features = FeatureExtractor.extract(comment, corpusStats, cSize)
                 comment.localId to ranker.score(features)
             }
 
@@ -154,6 +169,53 @@ class AnalysisOrchestrator(
         val totalMs = clock() - startRunTime
         telemetryRecorder?.recordEvent(TelemetryEvent.Timing(0L, 0L, 0L, totalMs, totalMs))
         return AnalysisRunResult(processedThisRun, isBlocked, jevCount, glmCount)
+    }
+
+    /**
+     * Import-wide inputs that must not depend on bounded batch composition: exact-duplicate
+     * grouping (with a source-stable survivor) and the corpus statistics used for scoring.
+     */
+    private data class ImportWideLocalContext(
+        val duplicateGroups: Map<String, LocalFilter.DuplicateGroup>,
+        val corpusStats: CorpusStats
+    )
+
+    /**
+     * Builds [ImportWideLocalContext] by streaming a lightweight column projection in bounded
+     * pages. Only compact metadata/stats are retained, so the full set of comment objects is
+     * never materialised and the bounded processing behaviour is preserved.
+     */
+    private suspend fun prepareImportWideLocalContext(
+        importId: String,
+        configVersion: Long
+    ): ImportWideLocalContext {
+        val duplicateBuilder = LocalFilter.DuplicateIndexBuilder()
+        val corpusAccumulator = CorpusStatsAccumulator()
+        var offset = 0
+        while (true) {
+            val page = database.commentDao().getCommentPreprocessingPage(
+                importId = importId,
+                configVersion = configVersion,
+                limit = LOCAL_PROCESSING_CHUNK_SIZE,
+                offset = offset
+            )
+            if (page.isEmpty()) break
+            for (row in page) {
+                corpusAccumulator.add(row.originalText, row.parentSourceCommentId)
+                duplicateBuilder.add(
+                    normalizedText = row.normalizedText,
+                    sourceKey = sourceStableKey(row.sourceCommentId, row.fingerprintSha256),
+                    likeCount = row.likeCount,
+                    publishedAtEpochMillis = row.publishedAtEpochMillis
+                )
+            }
+            offset += page.size
+            if (page.size < LOCAL_PROCESSING_CHUNK_SIZE) break
+        }
+        return ImportWideLocalContext(
+            duplicateGroups = duplicateBuilder.build(),
+            corpusStats = corpusAccumulator.build()
+        )
     }
 
     private suspend fun processStage(

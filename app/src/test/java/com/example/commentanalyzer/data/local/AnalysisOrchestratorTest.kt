@@ -527,6 +527,85 @@ class AnalysisOrchestratorTest {
         assertTrue(allComments.all { it.rankerVersion == 2 })
     }
 
+    @Test
+    fun identicalSourcePopulationsProduceIdenticalLocalResultsDespiteImportSpecificLocalIds() = runBlocking {
+        val duplicateText = "Exactly duplicated perspective on the same topic."
+        val totalComments = 300
+        // Picked so that the duplicate pair straddles the 250-comment bounded batch boundary
+        // when comments are ordered by their source-stable identity.
+        val duplicateIndices = setOf(0, 280)
+
+        fun population(importId: String, tag: String, reverseLocalId: Boolean): List<CommentEntity> =
+            (0 until totalComments).map { i ->
+                val sourceId = "s%03d".format(i)
+                val identity = if (reverseLocalId) sourceId.reversed() else sourceId
+                comment(sourceId, if (i in duplicateIndices) duplicateText else "Unique comment $i with substantive detail.")
+                    .copy(
+                        localId = "$tag-$identity",
+                        sourceCommentId = sourceId,
+                        fingerprintSha256 = "fp-$sourceId",
+                        importId = importId,
+                        processingConfigVersion = 3L,
+                        processingState = ProcessingState.IMPORTED,
+                        currentStage = ProcessingStage.INGESTION
+                    )
+            }
+
+        database.commentDao().insertComments(population("import-a", "a", reverseLocalId = false))
+        database.commentDao().insertComments(population("import-b", "b", reverseLocalId = true))
+
+        val v3Config = config().copy(
+            configVersion = 3L,
+            enableJevGate = false,
+            signalRankerVersion = 2
+        )
+        val orchestrator = orchestrator(
+            readiness = { RemoteProcessingReadiness(hasOpenRouterKey = true, remoteProcessingConsent = true) }
+        )
+
+        val resultA = orchestrator.run("import-a", v3Config)
+        val resultB = orchestrator.run("import-b", v3Config)
+
+        assertEquals(totalComments, resultA.locallyProcessedComments)
+        assertEquals(totalComments, resultB.locallyProcessedComments)
+
+        val savedA = database.commentDao().getCommentsForImport("import-a")
+            .associateBy { requireNotNull(it.sourceCommentId) }
+        val savedB = database.commentDao().getCommentsForImport("import-b")
+            .associateBy { requireNotNull(it.sourceCommentId) }
+        assertEquals(savedA.keys, savedB.keys)
+
+        for (sourceId in savedA.keys) {
+            val fromA = requireNotNull(savedA[sourceId])
+            val fromB = requireNotNull(savedB[sourceId])
+            assertEquals("state for $sourceId", fromA.processingState, fromB.processingState)
+            assertEquals("cluster size for $sourceId", fromA.nearDuplicateClusterSize, fromB.nearDuplicateClusterSize)
+            assertEquals(
+                "signal score for $sourceId",
+                requireNotNull(fromA.signalScore),
+                requireNotNull(fromB.signalScore),
+                1e-9
+            )
+            assertEquals("signal tags for $sourceId", fromA.signalTags, fromB.signalTags)
+        }
+
+        val duplicateSourceIds = duplicateIndices.map { "s%03d".format(it) }
+        assertEquals(listOf(2, 2), duplicateSourceIds.map { savedA.getValue(it).nearDuplicateClusterSize })
+        assertEquals(
+            1,
+            duplicateSourceIds.count { savedA.getValue(it).processingState == ProcessingState.COMPLETED }
+        )
+        assertEquals(
+            1,
+            duplicateSourceIds.count { savedA.getValue(it).processingState == ProcessingState.LOCAL_REJECTED }
+        )
+        // The survivor is chosen from source-stable data, so it is the same source comment in both imports.
+        assertEquals(ProcessingState.COMPLETED, savedA.getValue("s280").processingState)
+        assertEquals(ProcessingState.LOCAL_REJECTED, savedA.getValue("s000").processingState)
+        assertEquals(ProcessingState.COMPLETED, savedB.getValue("s280").processingState)
+        assertEquals(ProcessingState.LOCAL_REJECTED, savedB.getValue("s000").processingState)
+    }
+
  companion object {
         const val IMPORT_ID = "import-orchestration"
         const val CONFIG_VERSION = 2L

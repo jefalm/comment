@@ -27,6 +27,22 @@ data class AnalysisDistributionCount(
     val count: Long
 )
 
+/**
+ * Minimal column projection used for import-wide, source-stable local preprocessing
+ * (exact-duplicate grouping and corpus statistics). It intentionally excludes large or
+ * import-scoped fields so that preprocessing never needs to materialise full comment objects.
+ */
+data class CommentPreprocessingRow(
+    val localId: String,
+    val sourceCommentId: String?,
+    val fingerprintSha256: String,
+    val parentSourceCommentId: String?,
+    val normalizedText: String,
+    val originalText: String,
+    val likeCount: Int?,
+    val publishedAtEpochMillis: Long?
+)
+
 @Dao
 interface CommentDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -54,7 +70,7 @@ interface CommentDao {
             AND processingConfigVersion = :configVersion
             AND processingState = 'IMPORTED'
             AND currentStage = 'INGESTION'
-        ORDER BY localId
+        ORDER BY COALESCE(sourceCommentId, fingerprintSha256), localId
         LIMIT :limit
         """
     )
@@ -63,6 +79,24 @@ interface CommentDao {
         configVersion: Long,
         limit: Int
     ): List<CommentEntity>
+
+    @Query(
+        """
+        SELECT localId, sourceCommentId, fingerprintSha256, parentSourceCommentId,
+               normalizedText, originalText, likeCount, publishedAtEpochMillis
+        FROM comments
+        WHERE importId = :importId
+            AND processingConfigVersion = :configVersion
+        ORDER BY COALESCE(sourceCommentId, fingerprintSha256), localId
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    suspend fun getCommentPreprocessingPage(
+        importId: String,
+        configVersion: Long,
+        limit: Int,
+        offset: Int
+    ): List<CommentPreprocessingRow>
 
     @Query(
         """
