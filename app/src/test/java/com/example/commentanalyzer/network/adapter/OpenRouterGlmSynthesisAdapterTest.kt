@@ -422,6 +422,83 @@ class OpenRouterGlmSynthesisAdapterTest {
         assertEquals(131072, maxTokensForSmallInput)
     }
 
+    @Test
+    fun placeholderWithAllArraysEmptyReturnsSemanticallyEmpty() = runBlocking {
+        val json = """{
+            "schemaVersion": 3,
+            "executiveSummary": "Placeholder",
+            "themes": [],
+            "debates": [],
+            "blindSpotsAndCorrections": [],
+            "insiderPerspectives": []
+        }"""
+        server.enqueue(response(json))
+        val context = SynthesisContext(
+            importId = "imp-1", configVersion = 1L, totalRelevantComments = 1,
+            categoryDistribution = emptyMap(), sentimentDistribution = emptyMap(),
+            evidenceItems = listOf(
+                com.example.commentanalyzer.domain.analysis.SynthesisEvidenceInput(
+                    "c-01", "text", "praise", "positive", 1, 0.9, 0.9
+                )
+            )
+        )
+        val result = adapter().synthesize(context)
+        assertEquals("GLM_SYNTHESIS_SEMANTICALLY_EMPTY", result.error)
+        assertNull(result.synthesis)
+    }
+
+    @Test
+    fun normalSummaryWithAllArraysEmptyReturnsSemanticallyEmpty() = runBlocking {
+        val json = """{
+            "schemaVersion": 3,
+            "executiveSummary": "A real summary of the comments.",
+            "themes": [],
+            "debates": [],
+            "blindSpotsAndCorrections": [],
+            "insiderPerspectives": []
+        }"""
+        server.enqueue(response(json))
+        val context = SynthesisContext(
+            importId = "imp-1", configVersion = 1L, totalRelevantComments = 1,
+            categoryDistribution = emptyMap(), sentimentDistribution = emptyMap(),
+            evidenceItems = listOf(
+                com.example.commentanalyzer.domain.analysis.SynthesisEvidenceInput(
+                    "c-01", "text", "praise", "positive", 1, 0.9, 0.9
+                )
+            )
+        )
+        val result = adapter().synthesize(context)
+        assertEquals("GLM_SYNTHESIS_SEMANTICALLY_EMPTY", result.error)
+        assertNull(result.synthesis)
+    }
+
+    @Test
+    fun validSummaryWithOneGroundedThemePasses() = runBlocking {
+        val json = """{
+            "schemaVersion": 3,
+            "executiveSummary": "A valid executive summary of the discussion.",
+            "themes": [{"title": "Theme 1", "takeaway": "Takeaway 1", "representativeCommentId": "c-01", "citedCommentIds": ["c-01"]}],
+            "debates": [],
+            "blindSpotsAndCorrections": [],
+            "insiderPerspectives": []
+        }"""
+        server.enqueue(response(json))
+        val context = SynthesisContext(
+            importId = "imp-1", configVersion = 1L, totalRelevantComments = 1,
+            categoryDistribution = emptyMap(), sentimentDistribution = emptyMap(),
+            evidenceItems = listOf(
+                com.example.commentanalyzer.domain.analysis.SynthesisEvidenceInput(
+                    "c-01", "text", "praise", "positive", 1, 0.9, 0.9
+                )
+            )
+        )
+        val result = adapter().synthesize(context)
+        val synthesis = result.synthesis
+        assertNotNull(synthesis)
+        assertEquals("A valid executive summary of the discussion.", synthesis!!.executiveSummary)
+        assertEquals(1, synthesis.themesV3.size)
+    }
+
     private fun adapter(): OpenRouterGlmSynthesisAdapter {
         val tokenProvider = { "sk-test-key" }
         return OpenRouterGlmSynthesisAdapter(

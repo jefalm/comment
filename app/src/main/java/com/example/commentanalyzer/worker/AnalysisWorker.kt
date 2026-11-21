@@ -1,6 +1,7 @@
 package com.example.commentanalyzer.worker
 
 import android.content.Context
+import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -64,9 +65,14 @@ class AnalysisWorker(
         val synthesisResult =
             container.synthesisOrchestrator.synthesizeImport(importId, configVersion)
         if (synthesisResult.error != null || synthesisResult.synthesis == null) {
+            val synthesisError = synthesisResult.error ?: "GLM_SYNTHESIS_FAILED"
+            Log.w(
+                "AnalysisWorker",
+                "Synthesis failed: importId=$importId, configVersion=$configVersion, error=$synthesisError"
+            )
             return Result.failure(
                 Data.Builder()
-                    .putString(KEY_ERROR, synthesisResult.error ?: "GLM_SYNTHESIS_FAILED")
+                    .putString(KEY_ERROR, synthesisError)
                     .build()
             )
         }

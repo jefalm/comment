@@ -272,6 +272,14 @@ class OpenRouterGlmSynthesisAdapter(
             )
         }
 
+        val normalizedSummary = execSummary.trim().lowercase()
+        val isDisallowedSummary = normalizedSummary in DISALLOWED_SUMMARIES
+        val areAllSectionsEmpty = themes.isEmpty() && debates.isEmpty() && blindSpots.isEmpty() && insiders.isEmpty()
+
+        if (isDisallowedSummary || areAllSectionsEmpty) {
+            return ValidationResult(error = "GLM_SYNTHESIS_SEMANTICALLY_EMPTY")
+        }
+
         val synthesisResult = SynthesisResult(
             schemaVersion = SCHEMA_VERSION,
             executiveSummary = sanitizeProse(execSummary, evidenceIds),
@@ -344,6 +352,14 @@ class OpenRouterGlmSynthesisAdapter(
         const val MAX_OUTPUT_TOKENS = 131_072
         const val SCHEMA_VERSION = 3
         private val gson = Gson()
+
+        private val DISALLOWED_SUMMARIES = setOf(
+            "placeholder",
+            "n/a",
+            "none",
+            "no summary",
+            "summary unavailable"
+        )
 
         fun estimateInputTokens(messages: List<GlmMessage>): Int {
             val totalChars = messages.sumOf { it.content.length }
